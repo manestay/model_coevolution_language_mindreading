@@ -4,6 +4,7 @@ __author__ = 'Marieke Woensdregt'
 import numpy as np
 import pickle
 import time
+import os
 
 import context
 import hypspace
@@ -22,11 +23,12 @@ import saveresults
 
 
 ##!!!!!! MAKE SURE TO CHANGE THE PATHS BELOW TO MATCH THE FILE SYSTEM OF YOUR MACHINE:
-pickle_file_directory = '/Users/pplsuser/Documents/PhD_Edinburgh/My_Modelling/Bayesian_Lang_n_ToM/Results/Pickles/'
+root_path = '/nlp/data/bryanli/projects/model_coevolution_language_mindreading/results'
+pickle_file_directory = os.path.join(root_path, 'pickles')
 
-plot_file_directory = '/Users/pplsuser/Documents/PhD_Edinburgh/My_Modelling/Bayesian_Lang_n_ToM/Results/Plots/'
+plot_file_directory = os.path.join(root_path, 'plots')
 
-run_type_dir = 'Learner_Speaker/'
+run_type_dir = 'Learner_Speaker'
 
 
 
@@ -754,52 +756,55 @@ if __name__ == "__main__":
 
 
 
-
-    pickle_file_title_all_results = pickle_file_directory + run_type_dir + 'Results_' + file_title
+    save_dir = os.path.join(pickle_file_directory, run_type_dir)
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    pickle_file_title_all_results = os.path.join(save_dir, 'Results_' + file_title)
 
 
     pickle.dump(all_results_dict, open(pickle_file_title_all_results+'.p', 'wb'))
 
 
     #
-    # pickle_file_title_mean_std_final_posteriors = output_pickle_file_directory+run_type_dir+'Mean_Std_Final_Post_'+file_title
+    # pickle_file_title_mean_std_final_posteriors = output_pickle_file_directory/ run_type_dir+'Mean_Std_Final_Post_' / file_title
     #
     # pickle.dump(mean_std_final_posteriors_dict, open(pickle_file_title_mean_std_final_posteriors + '.p', 'wb'))
     #
     #
 
-    # pickle_file_title_lex_posterior_matrix = output_pickle_file_directory+ run_type_dir + 'Lex_Post_Matrix' + file_title
+    # pickle_file_title_lex_posterior_matrix = output_pickle_file_directory / 'Lex_Post_Matrix' + file_title
     #
     # pickle.dump(lex_posterior_matrix, open(pickle_file_title_lex_posterior_matrix + '.p', 'wb'))
     #
 
 
-    pickle_file_title_correct_hyp_posterior_mass_percentiles = pickle_file_directory + run_type_dir + 'Correct_Hyp_Post_Mass_Percentiles_' + file_title
+    pickle_file_title_correct_hyp_posterior_mass_percentiles = os.path.join(save_dir, 'Correct_Hyp_Post_Mass_Percentiles_' + file_title)
 
-    pickle.dump(percentiles_correct_hyp_posterior_mass_dict, open(pickle_file_title_correct_hyp_posterior_mass_percentiles+'.p', 'wb'))
+    with open(pickle_file_title_correct_hyp_posterior_mass_percentiles+'.p', 'wb') as f:
+        pickle.dump(percentiles_correct_hyp_posterior_mass_dict, f)
 
 
 
-    pickle_file_title_correct_hyp_posterior_mass_mean = pickle_file_directory + run_type_dir + 'Correct_Hyp_Post_Mass_Mean_' + file_title
+    pickle_file_title_correct_hyp_posterior_mass_mean = os.path.join(save_dir, 'Correct_Hyp_Post_Mass_Mean_' + file_title)
 
     pickle.dump(mean_correct_hyp_posterior_mass_dict, open(pickle_file_title_correct_hyp_posterior_mass_mean+'.p', 'wb'))
 
 
-    # pickle_file_title_hypothesis_percentiles = output_pickle_file_directory+ run_type_dir + 'Hyp_Percentiles' + file_title
+    # pickle_file_title_hypothesis_percentiles = output_pickle_file_directory / run_type_dir / 'Hyp_Percentiles' + file_title
     #
     # pickle.dump(hypotheses_percentiles, open(pickle_file_title_hypothesis_percentiles + '.p', 'wb'))
 
 
 
     #
-    # pickle_file_title_convergence_time_min_max = output_pickle_file_directory+run_type_dir+'Convergence_Time_Percentiles'+file_title
+    # pickle_file_title_convergence_time_min_max = output_pickle_file_directory / run_type_dir /'Convergence_Time_Percentiles'+file_title
     #
     # pickle.dump(convergence_time_dict, open(pickle_file_title_convergence_time_min_max + '.p', 'wb'))
     #
 
 
     #
-    # pickle_file_title_convergence_time_percentiles = output_pickle_file_directory+run_type_dir+'Convergence_Time_Percentiles'+file_title
+    # pickle_file_title_convergence_time_percentiles = output_pickle_file_directory / run_type_dir /'Convergence_Time_Percentiles'+file_title
     #
     # pickle.dump(percentiles_converge_time_over_theta_dict, open(pickle_file_title_convergence_time_percentiles + '.p', 'wb'))
 
@@ -811,5 +816,3 @@ if __name__ == "__main__":
     print
     print 'write_to_files_time is:'
     print str((write_to_files_time/60))+" m"
-
-

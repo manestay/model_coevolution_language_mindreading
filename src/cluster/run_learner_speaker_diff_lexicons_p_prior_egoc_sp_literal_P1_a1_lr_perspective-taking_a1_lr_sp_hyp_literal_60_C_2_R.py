@@ -6,6 +6,8 @@ import pickle
 import sys
 import time
 
+sys.path.append('../coevo')
+
 import hypspace
 from run_sim_learner_speaker_for_cluster import multi_runs_dyadic
 import saveresults
@@ -13,7 +15,7 @@ import saveresults
 
 # Setting the speaker_lex_index parameter based on the command-line input:
 speaker_lex_index = int(sys.argv[1])-1 #NOTE: first argument in sys.argv list is always the name of the script
-
+print('speaker_lex_index is', speaker_lex_index)
 
 #######################################################################################################################
 # 1. THE PARAMETERS:
@@ -190,4 +192,3 @@ if __name__ == "__main__":
     filename_results_dict = results_directory + 'Results_' + file_title
 
     pickle.dump(results_dict, open(filename_results_dict+'.p', 'wb'))
-

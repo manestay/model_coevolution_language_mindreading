@@ -2,7 +2,6 @@
 # Grid Engine options (lines prefixed with #$)
 #$ -N run_learner_speaker_diff_lexicons_p_prior_egoc_sp_literal_P1_a1_lr_perspective-taking_a1_lr_sp_hyp_literal_60_C_2_R
 #$ -cwd
-#$ -pe sharedmem 1
 #$ -l h_vmem=2G
 #$ -l h_rt=01:00:00
 #$ -t 1-343
@@ -16,14 +15,14 @@
 
 
 # Initialise the environment modules
-. /etc/profile.d/modules.sh
+# . /etc/profile.d/modules.sh
 
 # Check amount of memory (in kbytes) as seen by the job
 ulimit -v
 
 # Load Python
-module load python/2.7.10
+# module load python/2.7.10
+source ~/envs/coevo/bin/activate
 
 # Run the program
 python run_learner_speaker_diff_lexicons_p_prior_egoc_sp_literal_P1_a1_lr_perspective-taking_a1_lr_sp_hyp_literal_60_C_2_R.py $SGE_TASK_ID
-

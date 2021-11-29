@@ -6,7 +6,7 @@ import numpy as np
 from math import factorial
 import itertools
 
-np.set_printoptions(threshold=np.nan)
+np.set_printoptions(threshold=np.inf, linewidth=np.nan)
 
 
 
@@ -254,4 +254,3 @@ if __name__ == "__main__":
     print ''
     print "most_informative_contexts are:"
     print most_informative_contexts
-

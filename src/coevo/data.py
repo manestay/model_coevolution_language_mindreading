@@ -6,7 +6,7 @@ import itertools
 from math import factorial
 
 
-np.set_printoptions(threshold=np.nan)
+np.set_printoptions(threshold=np.inf, linewidth=np.nan)
 
 
 #######################################################################################################################
@@ -40,7 +40,7 @@ class Data(object):
             print self.topics[i]
             print 'utterances '+str(i)+' is:'
             print self.utterances[i]
-            print 
+            print
 
 
 
