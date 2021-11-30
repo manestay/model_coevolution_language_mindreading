@@ -2,6 +2,8 @@ __author__ = 'pplsuser'
 
 
 import itertools
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
@@ -53,7 +55,6 @@ def plot_lex_distribution(plot_file_path, plot_file_title, plot_title, hypothesi
     plt.gcf().subplots_adjust(bottom=0.15, top=0.85)  # This makes room for the xlabel and title
     plt.savefig(plot_file_path+'Plot_Prop_Hyps'+plot_file_title+'_cutoff_'+str(cut_off_point)+'.png')
     plt.show()
-
 
 
 def plot_timecourse_scores_percentiles(plot_title, plot_file_path, plot_file_title, n_data_points, percentiles_composite_hyp_score, percentiles_perspective_score, percentiles_lexicon_hyp_score, x_axis_steps):
@@ -1342,8 +1343,3 @@ def plot_iteration_lexicon_distance(plot_title, plot_file_path, plot_file_title,
     ax.legend(loc='center right')
     plt.savefig(plot_file_path+'/Iter_Lex_Dstnce_Pop'+plot_file_title+'.png')
     plt.show()
-
-
-
-
-
