@@ -2,7 +2,9 @@ __author__ = 'Marieke Woensdregt'
 
 
 import numpy as np
+import os
 from scipy import stats
+import pickle
 import time
 
 import hypspace
@@ -23,11 +25,13 @@ import saveresults
 
 
 ##!!!!!! MAKE SURE TO CHANGE THE PATHS BELOW TO MATCH THE FILE SYSTEM OF YOUR MACHINE:
-pickle_file_directory = '/Users/pplsuser/Documents/PhD_Edinburgh/My_Modelling/Bayesian_Lang_n_ToM/Results/Pickles/'
 
-plot_file_directory = '/Users/pplsuser/Documents/PhD_Edinburgh/My_Modelling/Bayesian_Lang_n_ToM/Results/Plots/'
+root_path = '/nlp/data/bryanli/projects/model_coevolution_language_mindreading/results'
+pickle_file_directory = os.path.join(root_path, 'pickles/')
 
-run_type_dir = 'Iteration/'
+plot_file_directory = os.path.join(root_path, 'plots/')
+
+run_type_dir = 'Iteration_multiprocessed/'
 
 
 
@@ -176,7 +180,7 @@ lexicon_prior_constant_string = saveresults.convert_array_to_string(lexicon_prio
 # 1.7: The parameters that determine the amount of data_dict that the learner gets to see, and the amount of runs of the simulation:
 
 n_utterances = 1  # This parameter determines how many signals the learner gets to observe in each context
-n_contexts = 12  # The number of contexts that the learner gets to see.
+n_contexts = 120  # The number of contexts that the learner gets to see.
 speaker_order_type = 'random'  # This can be set to either 'random', 'random_equal' (for random order with making sure that each speaker gets an equal amount of utterances) 'same_first' (first portion of input comes from same perspective, second portion of input from opposite perspective), 'same_first_equal' (where both speakers get to produce the exact same amount of utterances), 'opp_first' (vice versa) or 'opp_first_equal'
 first_input_stage_ratio = 0.5  # This is the ratio of contexts that will make up the first input stage (see parameter 'speaker_order_type' above)
 
@@ -192,7 +196,7 @@ ca_measure_type = 'comp_only'  # This can be set to either "comp_n_prod" or "com
 n_interactions = 6  # The number of interactions used to calculate communicative accuracy
 
 selection_type = 'ca_with_parent'  # This can be set to either 'none' or 'p_taking'
-selection_weighting = 'none'  # This is a factor with which the fitness of the agents (determined as the probability they assign to the correct perspective hypothesis) is multiplied and then exponentiated in order to weight the relative agent fitness (which in turn determines the probability of becoming a teacher for the next generation). A value of 0. implements neutral selection. A value of 1.0 creates weighting where the fitness is pretty much equal to relative posterior probability on correct p hyp), and the higher the value, the more skewed the weighting in favour of agents with better perspective-taking.
+selection_weighting = 1.0  # This is a factor with which the fitness of the agents (determined as the probability they assign to the correct perspective hypothesis) is multiplied and then exponentiated in order to weight the relative agent fitness (which in turn determines the probability of becoming a teacher for the next generation). A value of 0. implements neutral selection. A value of 1.0 creates weighting where the fitness is pretty much equal to relative posterior probability on correct p hyp), and the higher the value, the more skewed the weighting in favour of agents with better perspective-taking.
 if isinstance(selection_weighting, float):
     selection_weight_string = str(np.int(selection_weighting))
 else:
@@ -200,7 +204,7 @@ else:
 
 
 turnover_type = 'whole_pop'  # The type of turnover with which the population is replaced (for the iteration simulation). This can be set to either 'chain' (one agent at a time) or 'whole_pop' (entire population at once)
-n_iterations = 10  # The number of iterations (i.e. new agents in the case of 'chain', generations in the case of 'whole_pop')
+n_iterations = 200  # The number of iterations (i.e. new agents in the case of 'chain', generations in the case of 'whole_pop')
 report_every_i = 1
 cut_off_point = 5
 n_runs = 2  # The number of runs of the simulation
@@ -217,7 +221,7 @@ posterior_threshold = 0.95  # This parameter is used by the 'measur_n_data_point
 
 decoupling = True  # This can be set to either True or False. It determines whether genetic and cultural inheritance are coupled (i.e. from the same cultural parent) or decoupled.
 
-
+multithread = True
 #######################################################################################################################
 
 
@@ -359,7 +363,7 @@ print lexicon_hyps_sorted.shape
 #TODO: Finish the convergence measures inside this iteration function:
 def multi_runs_iteration(n_meanings, n_signals, n_runs, n_iterations, report_every_r, report_every_i, turnover_type, selection_type, selection_weighting, communication_type, ca_measure_type, n_interactions, n_contexts, n_utterances, context_generation, context_type, context_size, helpful_contexts, pop_size, teacher_type, speaker_order_type, first_input_stage_ratio, agent_type, perspectives, perspective_probs, sal_alpha, lexicon_probs, error, extra_error, pragmatic_level, optimality_alpha, learning_types, learning_type_probs, hypothesis_space, perspective_hyps, lexicon_hyps, learner_perspective, perspective_prior_type, perspective_prior_strength, lexicon_prior_type, lexicon_prior_constant, recording):
 
-    t0 = time.clock()
+    t0 = time.time()
 
     if recording == 'everything':
         multi_run_log_posteriors_per_agent_matrix = np.zeros((n_runs, n_iterations, pop_size, len(hypothesis_space)))
@@ -372,7 +376,13 @@ def multi_runs_iteration(n_meanings, n_signals, n_runs, n_iterations, report_eve
     multi_run_selected_parent_indices_matrix = np.zeros((n_runs, n_iterations, pop_size))
     multi_run_parent_lex_indices_matrix = np.zeros((n_runs, n_iterations, pop_size))
 
-
+    if multithread:
+        n_procs = pop_size
+        print('`multithread` option is true -- {} agents in parallel updated per iteration'.format(
+            n_procs
+        ))
+    else:
+        n_procs = 1
     #
     # dataset_array_pickle_file_specs = 'Dataset_array_'+str(n_meanings)+'M_'+str(n_signals)+'S_'+context_generation+'_'+str(len(helpful_contexts))+'_contexts_'+str(n_contexts)+'_observations'
     #
@@ -489,11 +499,12 @@ def multi_runs_iteration(n_meanings, n_signals, n_runs, n_iterations, report_eve
 
 
         elif agent_type == 'no_p_distinction':
+            perspectives_per_agent = None
             population = pop.Population(pop_size, n_meanings, n_signals, hypothesis_space, perspective_hyps, lexicon_hyps, learner_perspective, perspective_prior_type, perspective_prior_strength, lexicon_prior_type, lexicon_prior_constant, perspectives, perspective_probs, sal_alpha, lexicon_probs, error, extra_error, pragmatic_level, optimality_alpha, n_contexts, context_type, context_generation, context_size, helpful_contexts, n_utterances, learning_types, learning_type_probs)
 
 
         if r == 0:
-            print 
+            print
             print 'initial population for run 0 is:'
             population.print_population()
 
@@ -506,18 +517,8 @@ def multi_runs_iteration(n_meanings, n_signals, n_runs, n_iterations, report_eve
 
                 multi_run_log_posteriors_per_agent_matrix[r][i] = population_log_posteriors_matrix
                 population_lexicons_matrix = population.get_all_lexicons_matrix()
-                multi_run_pop_lexicons_matrix[r][i] = population_lexicons_matrix
 
-            if agent_type == 'p_distinction':
-                if recording == 'minimal':
-                    selected_hyp_per_agent_matrix, avg_fitness, parent_probs, selected_parent_indices, parent_lex_indices = population.pop_update(recording, context_generation, helpful_contexts, n_meanings, n_signals, error, turnover_type, selection_type, selection_weighting, communication_type, ca_measure_type, n_interactions, teacher_type, speaker_order_type, first_input_stage_ratio, perspectives_per_agent)
-                elif recording == 'everything':
-                    selected_hyp_per_agent_matrix, avg_fitness, parent_probs, selected_parent_indices, parent_lex_indices, log_posteriors_per_data_point_per_agent_matrix = population.pop_update(recording, context_generation, helpful_contexts, n_meanings, n_signals, error, turnover_type, selection_type, selection_weighting, communication_type, ca_measure_type, n_interactions, teacher_type, speaker_order_type, first_input_stage_ratio, perspectives_per_agent)
-            elif agent_type == 'no_p_distinction':
-                if recording == 'minimal':
-                    selected_hyp_per_agent_matrix, avg_fitness, parent_probs, selected_parent_indices, parent_lex_indices = population.pop_update(recording, context_generation, helpful_contexts, n_meanings, n_signals, error, turnover_type, selection_type, selection_weighting, communication_type, ca_measure_type, n_interactions, teacher_type, perspectives_per_agent=None)
-                elif recording == 'everything':
-                    selected_hyp_per_agent_matrix, avg_fitness, parent_probs, selected_parent_indices, parent_lex_indices, log_posteriors_per_data_point_per_agent_matrix = population.pop_update(recording, context_generation, helpful_contexts, n_meanings, n_signals, error, turnover_type, selection_type, selection_weighting, communication_type, ca_measure_type, n_interactions, teacher_type, perspectives_per_agent=None)
+            selected_hyp_per_agent_matrix, avg_fitness, parent_probs, selected_parent_indices, parent_lex_indices, log_posteriors_per_data_point_per_agent_matrix = population.pop_update(recording, context_generation, helpful_contexts, n_meanings, n_signals, error, turnover_type, selection_type, selection_weighting, communication_type, ca_measure_type, n_interactions, teacher_type, perspectives_per_agent=perspectives_per_agent, n_procs=n_procs, seed=i)
 
             multi_run_selected_hyps_per_generation_matrix[r][i] = selected_hyp_per_agent_matrix
             multi_run_avg_fitness_matrix[r][i] = avg_fitness
@@ -532,7 +533,7 @@ def multi_runs_iteration(n_meanings, n_signals, n_runs, n_iterations, report_eve
             multi_run_log_posteriors_final_agent_matrix[r] = population_log_posteriors_matrix
 
 
-    run_time_mins = (time.clock()-t0)/60.
+    run_time_mins = (time.time()-t0)/60.
 
     if recording == 'everything':
         results_dict = {'multi_run_log_posteriors_per_agent_matrix':multi_run_log_posteriors_per_agent_matrix,
@@ -591,22 +592,43 @@ def measur_n_data_points_for_p_learning(hypothesis_space, perspectives, perspect
     return min_n_data_points_per_agent_per_generation_flat
 
 
+def get_filename():
+    if context_generation == 'random':
+        if selection_type == 'none' or selection_type == 'l_learning':
+            filename = 'iter_'+str(n_meanings)+'M_'+str(n_signals)+'S'+'_size_'+str(pop_size)+'_select_'+selection_type+'_'+str(n_runs)+'_R_'+str(n_iterations)+'_I_'+str(n_contexts)+'_C_'+str(context_generation)+'_'+str(n_utterances)+'_U_'+'err_'+error_string+'_'+pragmatic_level+'_a_'+str(optimality_alpha)[0]+'_p_probs_'+perspective_probs_string+'_p_prior_'+str(perspective_prior_type)[0:4]+'_'+perspective_prior_strength_string+'_'+which_lexicon_hyps+'_l_prior_'+str(lexicon_prior_type)[0:4]+'_'+lexicon_prior_constant_string+'_'+learning_type_string+'_'+teacher_type
+        elif selection_type == 'p_taking':
+            filename = 'iter_'+str(n_meanings)+'M_'+str(n_signals)+'S'+'_size_'+str(pop_size)+'_select_'+selection_type+'_weight_'+selection_weight_string+'_'+str(n_runs)+'_R_'+str(n_iterations)+'_I_'+str(n_contexts)+'_C_'+str(context_generation)+'_'+str(n_utterances)+'_U_'+'err_'+error_string+'_'+pragmatic_level+'_a_'+str(optimality_alpha)[0]+'_p_probs_'+perspective_probs_string+'_p_prior_'+str(perspective_prior_type)[0:4]+'_'+perspective_prior_strength_string+'_'+which_lexicon_hyps+'_l_prior_'+str(lexicon_prior_type)[0:4]+'_'+lexicon_prior_constant_string+'_'+learning_type_string+'_'+teacher_type
+        elif selection_type == 'ca_with_parent':
+            filename = 'iter_'+str(n_meanings)+'M_'+str(n_signals)+'S'+'_size_'+str(pop_size)+'_select_'+selection_type+'_'+communication_type+'_'+ca_measure_type+'_'+str(n_runs)+'_R_'+str(n_iterations)+'_I_'+str(n_contexts)+'_C_'+str(context_generation)+'_'+str(n_utterances)+'_U_'+'err_'+error_string+'_'+pragmatic_level+'_a_'+str(optimality_alpha)[0]+'_p_probs_'+perspective_probs_string+'_p_prior_'+str(perspective_prior_type)[0:4]+'_'+perspective_prior_strength_string+'_'+which_lexicon_hyps+'_l_prior_'+str(lexicon_prior_type)[0:4]+'_'+lexicon_prior_constant_string+'_'+learning_type_string+'_'+teacher_type
 
+
+    elif context_generation == 'only_helpful' or context_generation == 'optimal':
+        if selection_type == 'none' or selection_type == 'l_learning':
+            filename = 'iter_'+str(n_meanings)+'M_'+str(n_signals)+'S'+'_size_'+str(pop_size)+'_select_'+selection_type+'_'+str(n_runs)+'_R_'+str(n_iterations)+'_I_'+str(n_contexts)+'_C_'+str(context_generation)+'_'+str(len(helpful_contexts))+'_'+str(n_utterances)+'_U_'+'err_'+error_string+'_'+pragmatic_level+'_a_'+str(optimality_alpha)[0]+'_p_probs_'+perspective_probs_string+'_p_prior_'+str(perspective_prior_type)[0:4]+'_'+perspective_prior_strength_string+'_'+which_lexicon_hyps+'_l_prior_'+str(lexicon_prior_type)[0:4]+'_'+lexicon_prior_constant_string+'_'+learning_type_string+'_'+teacher_type
+        elif selection_type == 'p_taking':
+            filename = 'iter_'+str(n_meanings)+'M_'+str(n_signals)+'S'+'_size_'+str(pop_size)+'_select_'+selection_type+'_weight_'+selection_weight_string+'_'+str(n_runs)+'_R_'+str(n_iterations)+'_I_'+str(n_contexts)+'_C_'+str(context_generation)+'_'+str(len(helpful_contexts))+'_'+str(n_utterances)+'_U_'+'err_'+error_string+'_'+pragmatic_level+'_a_'+str(optimality_alpha)[0]+'_p_probs_'+perspective_probs_string+'_p_prior_'+str(perspective_prior_type)[0:4]+'_'+perspective_prior_strength_string+'_'+which_lexicon_hyps+'_l_prior_'+str(lexicon_prior_type)[0:4]+'_'+lexicon_prior_constant_string+'_'+learning_type_string+'_'+teacher_type
+        elif selection_type == 'ca_with_parent':
+            filename = 'iter_'+str(n_meanings)+'M_'+str(n_signals)+'S'+'_size_'+str(pop_size)+'_select_'+selection_type+'_'+communication_type+'_'+ca_measure_type+'_'+str(n_runs)+'_R_'+str(n_iterations)+'_I_'+str(n_contexts)+'_C_'+str(context_generation)+'_'+str(len(helpful_contexts))+'_'+str(n_utterances)+'_U_'+'err_'+error_string+'_'+pragmatic_level+'_a_'+str(optimality_alpha)[0]+'_p_probs_'+perspective_probs_string+'_p_prior_'+str(perspective_prior_type)[0:4]+'_'+perspective_prior_strength_string+'_'+which_lexicon_hyps+'_l_prior_'+str(lexicon_prior_type)[0:4]+'_'+lexicon_prior_constant_string+'_'+learning_type_string+'_'+teacher_type
+    return filename
 
 if __name__ == "__main__":
 
-    t0 = time.clock()
+    t0 = time.time()
+    filename = get_filename()
 
     all_results_dict = multi_runs_iteration(n_meanings, n_signals, n_runs, n_iterations, report_every_r, report_every_i, turnover_type, selection_type, selection_weighting, communication_type, ca_measure_type, n_interactions, n_contexts, n_utterances, context_generation, context_type, context_size, helpful_contexts, pop_size, teacher_type, speaker_order_type, first_input_stage_ratio, agent_type, perspectives, perspective_probs, sal_alpha, lexicon_probs, error, extra_error, pragmatic_level, optimality_alpha, learning_types, learning_type_probs, hypothesis_space, perspective_hyps, lexicon_hyps, learner_perspective, perspective_prior_type, perspective_prior_strength, lexicon_prior_type, lexicon_prior_constant, recording)
 
+    ## load existing model
+    # pickle_file_title_all_results = pickle_file_directory + run_type_dir + 'Results_' + filename
+    # all_results_dict = pickle.load(open(pickle_file_title_all_results +'.p', 'rb'))
 
-    run_simulation_time = time.clock()-t0
+    run_simulation_time = time.time()-t0
     print
     print 'run_simulation_time is:'
     print str((run_simulation_time/60))+" m"
 
 
-    t1 = time.clock()
+    t1 = time.time()
 
 
     if recording == 'everything':
@@ -682,7 +704,7 @@ if __name__ == "__main__":
     print multi_run_proportion_max_offspring_single_parent.shape
 
 
-    calc_performance_measures_time = time.clock()-t1
+    calc_performance_measures_time = time.time()-t1
     print
     print 'calc_performance_measures_time is:'
     print str((calc_performance_measures_time/60))+" m"
@@ -694,40 +716,21 @@ if __name__ == "__main__":
     # Below the results are saved in pickle files:
 
 
-    t2 = time.clock()
+    t2 = time.time()
 
-
-    if context_generation == 'random':
-        if selection_type == 'none' or selection_type == 'l_learning':
-            filename = 'iter_'+str(n_meanings)+'M_'+str(n_signals)+'S'+'_size_'+str(pop_size)+'_select_'+selection_type+'_'+str(n_runs)+'_R_'+str(n_iterations)+'_I_'+str(n_contexts)+'_C_'+str(context_generation)+'_'+str(n_utterances)+'_U_'+'err_'+error_string+'_'+pragmatic_level+'_a_'+str(optimality_alpha)[0]+'_p_probs_'+perspective_probs_string+'_p_prior_'+str(perspective_prior_type)[0:4]+'_'+perspective_prior_strength_string+'_'+which_lexicon_hyps+'_l_prior_'+str(lexicon_prior_type)[0:4]+'_'+lexicon_prior_constant_string+'_'+learning_type_string+'_'+teacher_type
-        elif selection_type == 'p_taking':
-            filename = 'iter_'+str(n_meanings)+'M_'+str(n_signals)+'S'+'_size_'+str(pop_size)+'_select_'+selection_type+'_weight_'+selection_weight_string+'_'+str(n_runs)+'_R_'+str(n_iterations)+'_I_'+str(n_contexts)+'_C_'+str(context_generation)+'_'+str(n_utterances)+'_U_'+'err_'+error_string+'_'+pragmatic_level+'_a_'+str(optimality_alpha)[0]+'_p_probs_'+perspective_probs_string+'_p_prior_'+str(perspective_prior_type)[0:4]+'_'+perspective_prior_strength_string+'_'+which_lexicon_hyps+'_l_prior_'+str(lexicon_prior_type)[0:4]+'_'+lexicon_prior_constant_string+'_'+learning_type_string+'_'+teacher_type
-        elif selection_type == 'ca_with_parent':
-            filename = 'iter_'+str(n_meanings)+'M_'+str(n_signals)+'S'+'_size_'+str(pop_size)+'_select_'+selection_type+'_'+communication_type+'_'+ca_measure_type+'_'+str(n_runs)+'_R_'+str(n_iterations)+'_I_'+str(n_contexts)+'_C_'+str(context_generation)+'_'+str(n_utterances)+'_U_'+'err_'+error_string+'_'+pragmatic_level+'_a_'+str(optimality_alpha)[0]+'_p_probs_'+perspective_probs_string+'_p_prior_'+str(perspective_prior_type)[0:4]+'_'+perspective_prior_strength_string+'_'+which_lexicon_hyps+'_l_prior_'+str(lexicon_prior_type)[0:4]+'_'+lexicon_prior_constant_string+'_'+learning_type_string+'_'+teacher_type
-
-
-    elif context_generation == 'only_helpful' or context_generation == 'optimal':
-        if selection_type == 'none' or selection_type == 'l_learning':
-            filename = 'iter_'+str(n_meanings)+'M_'+str(n_signals)+'S'+'_size_'+str(pop_size)+'_select_'+selection_type+'_'+str(n_runs)+'_R_'+str(n_iterations)+'_I_'+str(n_contexts)+'_C_'+str(context_generation)+'_'+str(len(helpful_contexts))+'_'+str(n_utterances)+'_U_'+'err_'+error_string+'_'+pragmatic_level+'_a_'+str(optimality_alpha)[0]+'_p_probs_'+perspective_probs_string+'_p_prior_'+str(perspective_prior_type)[0:4]+'_'+perspective_prior_strength_string+'_'+which_lexicon_hyps+'_l_prior_'+str(lexicon_prior_type)[0:4]+'_'+lexicon_prior_constant_string+'_'+learning_type_string+'_'+teacher_type
-        elif selection_type == 'p_taking':
-            filename = 'iter_'+str(n_meanings)+'M_'+str(n_signals)+'S'+'_size_'+str(pop_size)+'_select_'+selection_type+'_weight_'+selection_weight_string+'_'+str(n_runs)+'_R_'+str(n_iterations)+'_I_'+str(n_contexts)+'_C_'+str(context_generation)+'_'+str(len(helpful_contexts))+'_'+str(n_utterances)+'_U_'+'err_'+error_string+'_'+pragmatic_level+'_a_'+str(optimality_alpha)[0]+'_p_probs_'+perspective_probs_string+'_p_prior_'+str(perspective_prior_type)[0:4]+'_'+perspective_prior_strength_string+'_'+which_lexicon_hyps+'_l_prior_'+str(lexicon_prior_type)[0:4]+'_'+lexicon_prior_constant_string+'_'+learning_type_string+'_'+teacher_type
-        elif selection_type == 'ca_with_parent':
-            filename = 'iter_'+str(n_meanings)+'M_'+str(n_signals)+'S'+'_size_'+str(pop_size)+'_select_'+selection_type+'_'+communication_type+'_'+ca_measure_type+'_'+str(n_runs)+'_R_'+str(n_iterations)+'_I_'+str(n_contexts)+'_C_'+str(context_generation)+'_'+str(len(helpful_contexts))+'_'+str(n_utterances)+'_U_'+'err_'+error_string+'_'+pragmatic_level+'_a_'+str(optimality_alpha)[0]+'_p_probs_'+perspective_probs_string+'_p_prior_'+str(perspective_prior_type)[0:4]+'_'+perspective_prior_strength_string+'_'+which_lexicon_hyps+'_l_prior_'+str(lexicon_prior_type)[0:4]+'_'+lexicon_prior_constant_string+'_'+learning_type_string+'_'+teacher_type
-
-
-
-
+    if not os.path.exists(pickle_file_directory+run_type_dir):
+        os.makedirs(pickle_file_directory+run_type_dir)
     pickle_file_title_all_results = pickle_file_directory + run_type_dir + 'Results_' + filename
-
-    saveresults.write_results_to_pickle_file(pickle_file_title_all_results, all_results_dict)
+    pickle.dump(all_results_dict, open(pickle_file_title_all_results+'.p', 'wb'))
+    # saveresults.write_results_to_pickle_file(pickle_file_title_all_results, all_results_dict)
 
 
     pickle_file_title_max_offspring_single_parent = pickle_file_directory + run_type_dir + 'Max_Offspring_' + filename
 
-    saveresults.write_results_to_pickle_file(pickle_file_title_max_offspring_single_parent, multi_run_proportion_max_offspring_single_parent)
+    # saveresults.write_results_to_pickle_file(pickle_file_title_max_offspring_single_parent, multi_run_proportion_max_offspring_single_parent)
+    pickle.dump(multi_run_proportion_max_offspring_single_parent, open(pickle_file_title_max_offspring_single_parent+'.p', 'wb'))
 
-
-    write_to_files_time = time.clock()-t2
+    write_to_files_time = time.time()-t2
     print
     print 'write_to_files_time is:'
     print str((write_to_files_time/60))+" m"
@@ -740,7 +743,7 @@ if __name__ == "__main__":
 
 
 
-    t3 = time.clock()
+    t3 = time.time()
 
 
     selected_hyps_new_lex_order_all_runs = get_selected_hyps_ordered(n_runs, n_iterations, pop_size, multi_run_selected_hyps_per_generation_matrix, argsort_informativity_per_lexicon)
@@ -764,6 +767,8 @@ if __name__ == "__main__":
 
 
     plot_file_path = plot_file_directory + run_type_dir
+    if not os.path.exists(plot_file_path):
+        os.makedirs(plot_file_path)
 
     if context_generation == 'random':
         if selection_type == 'none' or selection_type == 'l_learning':
@@ -808,7 +813,7 @@ if __name__ == "__main__":
         print min_n_data_points_per_agent_per_generation_per_run_p_prior_neutral_00_l_prior_neutral_00
 
 
-        plotting_time = time.clock()-t3
+        plotting_time = time.time()-t3
         print
         print 'plotting_time is:'
         print str((plotting_time/60))+" m"

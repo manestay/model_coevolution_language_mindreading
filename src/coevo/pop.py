@@ -1,7 +1,10 @@
 __author__ = 'Marieke Woensdregt'
 
+import time
 
+import numpy as np
 from scipy.misc import logsumexp
+from pathos.pools import ProcessPool
 
 import prior
 from hypspace import *
@@ -9,7 +12,7 @@ from data import Data, FixedContextsData, SpeakerAnnotatedData, convert_dataset_
 from lex import Lexicon
 from context import *
 
-
+np.seterr(divide = 'ignore')
 
 
 def create_speaker_order_single_generation(population, speaker_order_type, n_contexts, first_input_stage_ratio):
@@ -1184,13 +1187,45 @@ class Population(object):
         pop_data = FixedContextsData(context_matrix, pop_topic_matrix, signal_counts_per_context_matrix, helpful_contexts)
         return pop_data
 
+    def agent_update(self, agent_data, error):
+        # 1.2) We choose the new agent's perspective and learning_type with uniform probability from the attributes self.perspective_probs and self.learning_probs:
+        new_agent_perspective = np.random.choice(self.perspectives, size=1, p=self.perspective_probs)
+        new_agent_learning_type = np.random.choice(self.learning_types, size=1, p=self.learning_type_probs)
+        new_agent_lexicon = Lexicon('empty_lex', self.n_meanings, self.n_signals)
 
-    def pop_update(self, recording, context_generation, helpful_contexts, n_meanings, n_signals, error, turnover_type, selection_type, selection_weighting, communication_type, ca_measure_type, n_interactions, teacher_type, perspectives_per_agent=None):
+        # 1.3) Then we initialize the new agent with that perspective and learning_type and with an empty lexicon
+        #FIXME: Again: the new agent is initialized with attributes that are globally defined in the params_and_run module ()
+        perspective_prior = prior.create_perspective_prior(self.perspective_hyps, self.lexicon_hyps, self.perspective_prior_type, self.learner_perspective, self.perspective_prior_strength)
+        lexicon_prior = prior.create_lexicon_prior(self.lexicon_hyps, self.lexicon_prior_type, self.lexicon_prior_strength, self.error)
+        composite_log_priors = prior.list_composite_log_priors(self.agent_type, self.size, self.hypothesis_space, self.perspective_hyps, self.lexicon_hyps, perspective_prior, lexicon_prior)
+
+        if self.pragmatic_level == 'literal' or self.pragmatic_level == 'perspective-taking':
+            new_agent = Agent(self.perspective_hyps, self.lexicon_hyps, composite_log_priors, composite_log_priors, new_agent_perspective[0], self.sal_alpha, new_agent_lexicon, new_agent_learning_type[0])
+        elif self.pragmatic_level == 'prag':
+            new_agent = PragmaticAgent(self.perspective_hyps, self.lexicon_hyps, composite_log_priors, composite_log_priors, new_agent_perspective[0], self.sal_alpha, new_agent_lexicon, new_agent_learning_type[0], self.pragmatic_level, self.pragmatic_level, self.optimality_alpha, self.extra_error)
+
+
+        # # 1.4) Then we get the new agent's parent data from the old population:
+        # agent_data = data_per_agent[agent_idx]
+
+        # 1.5) We subsequently let the new agent learn from the annotated_pop_data of the population and update its lexicon accordingly:
+
+        log_posteriors = new_agent.inference_on_signal_counts_data(agent_data, error)
+
+        selected_hyp, selected_lex_hyp = new_agent.update_lexicon()
+        return new_agent, log_posteriors, selected_hyp, selected_lex_hyp
+
+    def pop_update(self, recording, context_generation, helpful_contexts, n_meanings, n_signals,
+                   error, turnover_type, selection_type, selection_weighting, communication_type,
+                   ca_measure_type, n_interactions, teacher_type, perspectives_per_agent=None,
+                   n_procs=1, seed=None):
     # def pop_update(self, dataset_array_pickle_file_name, log_likelihood_pickle_file_name, recording, context_generation, helpful_contexts, n_meanings, n_signals, error, turnover_type, selection_type, selection_weighting, communication_type, ca_measure_type, n_interactions, teacher_type, perspectives_per_agent=None):
         """
         :param turnover_type: 'chain' for one agent at a time, or 'whole_pop' for the whole population at once
         :return: Doesn't return anything, but changes self.population to the new population
         """
+        if seed is not None:
+            np.random.seed(seed)
         parent_fitness_array = self.calc_fitness(selection_type, selection_weighting, communication_type, ca_measure_type, n_interactions, self.parent_index_per_learner, self.parent_generation, self.parent_lex_indices)
         avg_fitness = np.mean(parent_fitness_array)
 
@@ -1236,54 +1271,61 @@ class Population(object):
         selected_hyp_per_agent_matrix = np.zeros(n_agents_to_be_replaced)
         # normalized_log_posteriors_per_data_point_per_agent_matrix = np.zeros((n_agents_to_be_replaced, (self.n_contexts+1), len(self.hypothesis_space)))
         normalized_log_posteriors_per_agent_matrix = np.zeros((n_agents_to_be_replaced, len(self.hypothesis_space)))
-        for i in range(n_agents_to_be_replaced):
-            # 1.2) We choose the new agent's perspective and learning_type with uniform probability from the attributes self.perspective_probs and self.learning_probs:
-            new_agent_perspective = np.random.choice(self.perspectives, size=1, p=self.perspective_probs)
-            new_agent_learning_type = np.random.choice(self.learning_types, size=1, p=self.learning_type_probs)
-            new_agent_lexicon = Lexicon('empty_lex', self.n_meanings, self.n_signals)
+        if n_procs == 1:
+            pool = None
+            for agent_idx in range(n_agents_to_be_replaced):
+                start = time.time()
+                print('  agent {}'.format(agent_idx))
+                agent_data = data_per_agent[agent_idx]
+                new_agent, log_posteriors, selected_hyp, lex_hyp = self.agent_update(agent_data, error)
+                normalized_log_posteriors_per_agent_matrix[agent_idx] = log_posteriors
+                selected_hyp_per_agent_matrix[agent_idx] = selected_hyp
+                self.lex_indices_per_agent[agent_idx] = lex_hyp
 
-            # 1.3) Then we initialize the new agent with that perspective and learning_type and with an empty lexicon
-            #FIXME: Again: the new agent is initialized with attributes that are globally defined in the params_and_run module ()
-            perspective_prior = prior.create_perspective_prior(self.perspective_hyps, self.lexicon_hyps, self.perspective_prior_type, self.learner_perspective, self.perspective_prior_strength)
-            lexicon_prior = prior.create_lexicon_prior(self.lexicon_hyps, self.lexicon_prior_type, self.lexicon_prior_strength, self.error)
-            composite_log_priors = prior.list_composite_log_priors(self.agent_type, self.size, self.hypothesis_space, self.perspective_hyps, self.lexicon_hyps, perspective_prior, lexicon_prior)
+                # 1.6) Then, we remove the oldest agent (c.e. agent with index 0) from the population, and append the new agent at the end:
+                self.population = np.delete(self.population, 0)
+                self.population = np.append(self.population, new_agent)  # Appends the new agent to the end of the population
+                self.perspectives_per_agent = np.delete(self.perspectives_per_agent, 0)
+                self.perspectives_per_agent = np.append(self.perspectives_per_agent, new_agent.perspective)
+                self.lexicons_per_agent = np.delete(self.lexicons_per_agent, 0, axis=0)
+                # self.lexicons_per_agent = np.append(self.lexicons_per_agent, new_agent.lexicon.lexicon, axis=0)
+                self.lexicons_per_agent = np.vstack((self.lexicons_per_agent, [new_agent.lexicon.lexicon]))
+                self.learning_types_per_agent = np.delete(self.learning_types_per_agent, 0)
+                self.learning_types_per_agent = np.append(self.learning_types_per_agent, new_agent.learning_type)
+                print('took {:.2f}s'.format(time.time()-start))
+        else: # multiprocessing doesn't work with 'chain' condition!
+            start = time.time()
+            pool = ProcessPool(nodes=n_procs)
+            error_list = [error] * n_agents_to_be_replaced
+            results = pool.amap(self.agent_update, data_per_agent, error_list)
+            results = results.get()
 
-            if self.pragmatic_level == 'literal' or self.pragmatic_level == 'perspective-taking':
-                new_agent = Agent(self.perspective_hyps, self.lexicon_hyps, composite_log_priors, composite_log_priors, new_agent_perspective[0], self.sal_alpha, new_agent_lexicon, new_agent_learning_type[0])
-            elif self.pragmatic_level == 'prag':
-                new_agent = PragmaticAgent(self.perspective_hyps, self.lexicon_hyps, composite_log_priors, composite_log_priors, new_agent_perspective[0], self.sal_alpha, new_agent_lexicon, new_agent_learning_type[0], self.pragmatic_level, self.pragmatic_level, self.optimality_alpha, self.extra_error)
+            for agent_idx in range(n_agents_to_be_replaced):
+                normalized_log_posteriors_per_agent_matrix[agent_idx] = results[agent_idx][1]
+                selected_hyp_per_agent_matrix[agent_idx] = results[agent_idx][2]
+                self.lex_indices_per_agent[agent_idx] = results[agent_idx][3]
 
-
-            # 1.4) Then we get the new agent's parent data from the old population:
-            agent_data = data_per_agent[i]
-
-            # 1.5) We subsequently let the new agent learn from the annotated_pop_data of the population and update its lexicon accordingly:
-
-
-            normalized_log_posteriors_per_agent_matrix[i] = new_agent.inference_on_signal_counts_data(agent_data, error)
-
-            selected_hyp, selected_lex_hyp = new_agent.update_lexicon()
-            selected_hyp_per_agent_matrix[i] = selected_hyp
-            self.lex_indices_per_agent[i] = selected_lex_hyp
-
-            # 1.6) Then, we remove the oldest agent (c.e. agent with index 0) from the population, and append the new agent at the end:
-            self.population = np.delete(self.population, 0)
-            self.population = np.append(self.population, new_agent)  # Appends the new agent to the end of the population
-            self.perspectives_per_agent = np.delete(self.perspectives_per_agent, 0)
-            self.perspectives_per_agent = np.append(self.perspectives_per_agent, new_agent.perspective)
-            self.lexicons_per_agent = np.delete(self.lexicons_per_agent, 0)
-            self.lexicons_per_agent = np.append(self.population, new_agent.lexicon)
-            self.learning_types_per_agent = np.delete(self.learning_types_per_agent, 0)
-            self.learning_types_per_agent = np.append(self.population, new_agent.learning_type)
-
+            self.population = [x[0] for x in results]
+            self.perspectives_per_agent = [x[0].perspective for x in results]
+            self.lexicons_per_agent = [x[0].lexicon.lexicon for x in results]
+            self.learning_types_per_agent = [x[0].learning_type for x in results]
+            print('took {:.2f}s'.format(time.time()-start))
         # 1.7) Finally, the agent id numbers are updated:
         for i in range(self.size):
             agent = self.population[i]
             agent.id = i
+
+        if pool is not None:
+            pool.close()
+            pool.join()
+            pool.clear()
+
         if recording == 'minimal':
-            return selected_hyp_per_agent_matrix, avg_fitness, parent_probs, self.parent_index_per_learner, self.parent_lex_indices
+            return selected_hyp_per_agent_matrix, avg_fitness, parent_probs, self.parent_index_per_learner, self.parent_lex_indices, None
         elif recording == 'everything':
-            return selected_hyp_per_agent_matrix, avg_fitness, parent_probs, self.parent_index_per_learner, self.parent_lex_indicesnormalized_log_posteriors_per_data_point_per_agent_matrix
+            # TODO: original code was bugged and commented out for this mode!
+            normalized_log_posteriors_per_data_point_per_agent_matrix = None
+            return selected_hyp_per_agent_matrix, avg_fitness, parent_probs, self.parent_index_per_learner, self.parent_lex_indices, normalized_log_posteriors_per_data_point_per_agent_matrix
 
 
     def calc_population_average_lexicon(self):
@@ -1325,7 +1367,7 @@ class Population(object):
         Prints each agent (c.e. the agent's attributes) with it's respective index number on a new line
         """
         for i in range(len(self.population)):
-            print 
+            print
             agent = self.population[i]
             print "This is agent number "+str(i)
             agent.print_agent()
@@ -1925,9 +1967,4 @@ class DistinctionPopulation(Population):
             agent = self.population[i]
             agent.id = i
 
-        if recording == 'minimal':
-            return selected_hyp_per_agent_matrix, avg_fitness, parent_probs, self.parent_index_per_learner, self.parent_lex_indices
-        elif recording == 'everything':
-            return selected_hyp_per_agent_matrix, avg_fitness, parent_probs, self.parent_index_per_learner, self.parent_lex_indices, normalized_log_posteriors_per_data_point_per_agent_matrix
-
-
+        return selected_hyp_per_agent_matrix, avg_fitness, parent_probs, self.parent_index_per_learner, self.parent_lex_indices, normalized_log_posteriors_per_data_point_per_agent_matrix
