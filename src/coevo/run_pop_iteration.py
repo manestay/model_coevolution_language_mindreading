@@ -171,7 +171,6 @@ if __name__ == "__main__":
         n_signals = config.getint('lexicon', 'n_signals')
         n_utterances = config.getint('lexicon', 'n_utterances')
         n_contexts = config.getint('lexicon', 'n_contexts')
-        n_interactions = config.getint('lexicon', 'n_interactions')
         n_iterations = config.getint('lexicon', 'n_iterations')
         n_runs = config.getint('lexicon', 'n_runs')
 
@@ -213,6 +212,7 @@ if __name__ == "__main__":
         run_type = config.get('simulation', 'run_type')
         communication_type = config.get('simulation', 'communication_type')
         ca_measure_type = config.get('simulation', 'ca_measure_type')
+        n_interactions = config.getint('simulation', 'n_interactions')
         selection_type = config.get('simulation', 'selection_type')
         selection_weighting = config.getfloat('simulation', 'selection_weighting')
         turnover_type = config.get('simulation', 'turnover_type')
@@ -340,11 +340,11 @@ if __name__ == "__main__":
     if not args.plot_only:
         if not os.path.exists(pickle_file_directory+run_type_dir):
             os.makedirs(pickle_file_directory+run_type_dir)
-        pickle_file_title_all_results = pickle_file_directory + run_type_dir + 'Results_' + filename
+        pickle_file_title_all_results = pickle_file_directory + run_type_dir + '/Results_' + filename
         pickle.dump(all_results_dict, open(pickle_file_title_all_results+'.p', 'wb'))
 
 
-        pickle_file_title_max_offspring_single_parent = pickle_file_directory + run_type_dir + 'Max_Offspring_' + filename
+        pickle_file_title_max_offspring_single_parent = pickle_file_directory + run_type_dir + '/Max_Offspring_' + filename
 
         pickle.dump(proportion_max_offspring_single_parent_matrix, open(pickle_file_title_max_offspring_single_parent+'.p', 'wb'))
 
@@ -364,7 +364,6 @@ if __name__ == "__main__":
     if not os.path.exists(plot_file_path):
         os.makedirs(plot_file_path)
 
-    plot_file_title = 'proportion_bar_graph'
     plot_title = 'Egocentric perspective prior & '+str(n_meanings)+'x'+str(n_signals)+' lexicons'
 
-    plots.plot_lex_distribution(plot_file_path, plot_file_title, plot_title, hypothesis_count_proportions, yerr_scaled_selected_hyps_for_plot, cut_off_point, text_size=1.6)
+    plots.plot_lex_distribution(plot_file_path, filename, plot_title, hypothesis_count_proportions, yerr_scaled_selected_hyps_for_plot, cut_off_point, text_size=1.6)

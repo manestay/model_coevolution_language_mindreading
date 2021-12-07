@@ -39,12 +39,12 @@ run_type_dir = 'Iteration_multiprocessed/'
 
 # 1.1: The parameters defining the lexicon size (and thus the number of meanings in the world):
 
-n_meanings = 2  # The number of meanings
-n_signals = 2  # The number of signals
+n_meanings = 3  # The number of meanings
+n_signals = 3  # The number of signals
 n_utterances = 1  # This parameter determines how many signals the learner gets to observe in each context
-n_contexts = 60  # The number of contexts that the learner gets to see.
-n_iterations = 300  # The number of iterations (i.e. new agents in the case of 'chain', generations in the case of 'whole_pop')
-n_runs = 20  # The number of runs of the simulation
+n_contexts = 120  # The number of contexts that the learner gets to see.
+n_iterations = 200  # The number of iterations (i.e. new agents in the case of 'chain', generations in the case of 'whole_pop')
+n_runs = 10  # The number of runs of the simulation
 
 
 
@@ -111,7 +111,7 @@ agent_type = 'no_p_distinction' # This can be set to either 'p_distinction' or '
 
 
 
-pragmatic_level = 'prag'  # This can be set to either 'literal', 'perspective-taking' or 'prag'
+pragmatic_level = 'literal'  # This can be set to either 'literal', 'perspective-taking' or 'prag'
 optimality_alpha = 3.0  # Goodman & Stuhlmuller (2013) fitted sal_alpha = 3.4 to participant data with 4x3 lexicon of three number words ('one', 'two', and 'three') that could be mapped to four different world states (0, 1, 2, and 3)
 optimality_alpha_string = saveresults.convert_float_value_to_string(optimality_alpha)
 
@@ -191,7 +191,7 @@ first_input_stage_ratio = 0.5  # This is the ratio of contexts that will make up
 #FIXME: In the current implementation 'half_ambiguous_lex' can have different instantiations. Therefore, if we run a simulation where there are different lexicon_type_probs, we will want the run_type to be 'population_same_pop' to make sure that all the 'half ambiguous' speakers do have the SAME half ambiguous lexicon.
 run_type = 'iter'  # This parameter determines whether the learner communicates with only one speaker ('dyadic') or with a population ('population_diff_pop' if there are no speakers with the 'half_ambiguous' lexicon type, 'population_same_pop' if there are, 'population_same_pop_dist_learner' if the learner can distinguish between different speakers), or whether we do an iterated learning model ('iter')
 
-communication_type = 'prag'  # This can be set to either 'lex_only', 'lex_n_context', 'lex_n_p' or 'prag'
+communication_type = 'lex_n_context'  # This can be set to either 'lex_only', 'lex_n_context', 'lex_n_p' or 'prag'
 ca_measure_type = 'comp_only'  # This can be set to either "comp_n_prod" or "comp_only"
 n_interactions = 6  # The number of interactions used to calculate communicative accuracy
 

@@ -1,5 +1,6 @@
 __author__ = 'pplsuser'
 
+import os
 
 import itertools
 import matplotlib
@@ -53,7 +54,8 @@ def plot_lex_distribution(plot_file_path, plot_file_title, plot_title, hypothesi
     ax.set_ylabel('Proportion over generations', labelpad=10)
     ax.set_title(plot_title, y=1.05, fontweight='bold')
     plt.gcf().subplots_adjust(bottom=0.15, top=0.85)  # This makes room for the xlabel and title
-    plt.savefig(plot_file_path+'Plot_Prop_Hyps'+plot_file_title+'_cutoff_'+str(cut_off_point)+'.png')
+    fname = os.path.join(plot_file_path, 'Plot_Prop_Hyps_'+plot_file_title+'_cutoff_'+str(cut_off_point)+'.png')
+    plt.savefig(fname)
     plt.show()
 
 

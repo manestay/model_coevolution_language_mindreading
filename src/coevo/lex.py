@@ -4,7 +4,7 @@ __author__ = 'Marieke Woensdregt'
 
 import numpy as np
 
-
+np.seterr(divide = 'ignore')
 
 
 class Lexicon(object):
@@ -111,9 +111,9 @@ class Lexicon(object):
         """
         :return: Prints the lexicon (doesn't return anything)
         """
-        print 
+        print
         print self.lexicon
-        print 
+        print
 
 
 
