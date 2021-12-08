@@ -4,4 +4,4 @@
 results*/
 *.e*
 *.o*
-run.sh
+.vscode/
