@@ -1,85 +1,33 @@
 import argparse
+from collections import OrderedDict
 import ConfigParser
 import logging
 import time
 import cPickle as pickle
 import os
+import json
+import sys
 
 import numpy as np
-from scipy import stats
 
+from hypspace import list_hypothesis_space
 import lex
+import measur
 import plots
 import pop
 import prior
-from lib import get_helpful_contexts, get_lexicon_hyps, get_hypothesis_space, get_filename
+from lib import get_helpful_contexts, get_lexicon_hyps, get_hypothesis_space, read_config, \
+                get_selected_hyps_ordered
+from plot_lib import *
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument('config', help='path to config file')
+parser.add_argument("run_name", help='name of run (name of bottom-level save dir)')
+parser.add_argument('--overwrite', '-o', action='store_true')
 parser.add_argument("-q", "--quiet", dest='verbose', action="store_false", help="decrease output verbosity")
 parser.add_argument("-po", "--plot-only", action="store_true", help="load and plot (make sure you ran this config before)")
 
-def read_config(fname):
-    # helper function to print python code to load config to variables
-    # some post-processing required for non-str types and lists!
-    section = ''
-    with open(fname, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if line.startswith('#') or not line:
-                continue
-            elif line.startswith('['):
-                section = line.strip('\n[]')
-                continue
-            key, value = [x.strip() for x in line.split('=')]
-            print("{} = config.get('{}', '{}')".format(key, section, key))
-
-
-def get_selected_hyps_ordered(n_runs, n_iterations, pop_size, multi_run_selected_hyps_per_generation_matrix, hyp_order):
-            selected_hyps_new_lex_order_all_runs = np.zeros_like(multi_run_selected_hyps_per_generation_matrix)
-            for r in range(n_runs):
-                for i in range(n_iterations):
-                    for a in range(pop_size):
-                        this_agent_hyp = multi_run_selected_hyps_per_generation_matrix[r][i][a]
-                        if this_agent_hyp >= len(hyp_order):
-                            this_agent_hyp = this_agent_hyp-len(hyp_order)
-                        new_order_index = np.argwhere(hyp_order == this_agent_hyp)
-                        selected_hyps_new_lex_order_all_runs[r][i][a] = new_order_index
-            return selected_hyps_new_lex_order_all_runs
-
-
-def calc_mean_and_conf_invs_distribution(n_runs, n_copies, lexicon_hyps, which_hyps_on_graph, min_info_indices, intermediate_info_indices, max_info_indices, n_iterations, cut_off_point, selected_hyps_new_lex_order_all_runs):
-    hist_values_averaged_per_run = np.zeros((n_runs, 3))
-    for r in range(n_runs):
-        selected_hyps_new_lex_order_final_section = selected_hyps_new_lex_order_all_runs[r][cut_off_point:n_iterations]
-        selected_hyps_new_lex_order_final_section = selected_hyps_new_lex_order_final_section.flatten()
-        if which_hyps_on_graph == 'lex_hyps_only' or which_hyps_on_graph == 'lex_hyps_collapsed':
-            n_lex_hyps = len(lexicon_hyps)
-            for i in range(len(selected_hyps_new_lex_order_final_section)):
-                hyp_index = selected_hyps_new_lex_order_final_section[i]
-                if hyp_index > (n_lex_hyps - 1):
-                    selected_hyps_new_lex_order_final_section[i] = hyp_index - n_lex_hyps
-        hist_values = np.histogram(selected_hyps_new_lex_order_final_section, bins=[0, min_info_indices[-1]+1, intermediate_info_indices[-1]+1, max_info_indices[-1]])
-        hist_values_averaged = np.divide(hist_values[0].astype(float), [float(len(min_info_indices)), float(len(intermediate_info_indices)), float(len(max_info_indices))])
-        hist_values_averaged_per_run[r] = hist_values_averaged
-    hist_values_averaged_per_run_optimal_first = np.fliplr(hist_values_averaged_per_run)
-    mean_selected_hyps_by_lex_type = np.mean(hist_values_averaged_per_run_optimal_first, axis=0)
-    std_selected_hyps_by_lex_type = np.std(hist_values_averaged_per_run_optimal_first, axis=0)
-    conf_invs_selected_hyps_by_lex_type = stats.norm.interval(0.95, loc=mean_selected_hyps_by_lex_type, scale=std_selected_hyps_by_lex_type / np.sqrt(n_runs*n_copies))
-    conf_invs_selected_hyps_by_lex_type = np.array(conf_invs_selected_hyps_by_lex_type)
-    lower_yerr_selected_hyps_for_plot = np.subtract(mean_selected_hyps_by_lex_type, conf_invs_selected_hyps_by_lex_type[0])
-    upper_yerr_selected_hyps_for_plot = np.subtract(conf_invs_selected_hyps_by_lex_type[1], mean_selected_hyps_by_lex_type)
-    yerr_selected_hyps_for_plot = np.array([lower_yerr_selected_hyps_for_plot, upper_yerr_selected_hyps_for_plot])
-    hypothesis_count_proportions = np.divide(mean_selected_hyps_by_lex_type, np.sum(mean_selected_hyps_by_lex_type))
-    yerr_scaled_selected_hyps_for_plot = np.divide(yerr_selected_hyps_for_plot, np.sum(mean_selected_hyps_by_lex_type))
-    return hypothesis_count_proportions, yerr_scaled_selected_hyps_for_plot
-
-def multi_runs(n_meanings, n_signals, n_runs, n_iterations, report_every_r, report_every_i, turnover_type, selection_type, selection_weighting, communication_type, ca_measure_type, n_interactions, n_contexts, n_utterances, context_generation, context_type, context_size, helpful_contexts, pop_size, teacher_type, speaker_order_type, first_input_stage_ratio, agent_type, perspectives, perspective_probs, sal_alpha, lexicon_probs, error, extra_error, pragmatic_level, optimality_alpha, learning_types, learning_type_probs, hypothesis_space, perspective_hyps, lexicon_hyps, learner_perspective, perspective_prior_type, perspective_prior_strength, lexicon_prior_type, lexicon_prior_constant, recording):
-    multi_run_selected_hyps_per_generation_matrix = np.zeros((n_runs, n_iterations, pop_size))
-    multi_run_avg_fitness_matrix = np.zeros((n_runs, n_iterations))
-    multi_run_parent_probs_matrix = np.zeros((n_runs, n_iterations, pop_size))
-    multi_run_selected_parent_indices_matrix = np.zeros((n_runs, n_iterations, pop_size))
-    multi_run_parent_lex_indices_matrix = np.zeros((n_runs, n_iterations, pop_size))
 
 def run_iteration(n_meanings, n_signals, n_iterations, report_every_i, turnover_type, selection_type, selection_weighting, communication_type, ca_measure_type, n_interactions, n_contexts, n_utterances, context_generation, context_type, context_size, helpful_contexts, pop_size, teacher_type, agent_type, perspectives, perspective_probs, sal_alpha, lexicon_probs, error, extra_error, pragmatic_level, optimality_alpha, learning_types, learning_type_probs, hypothesis_space, perspective_hyps, lexicon_hyps, learner_perspective, perspective_prior_type, perspective_prior_strength, lexicon_prior_type, lexicon_prior_constant, recording, print_pop=False, run_idx=0):
     run_selected_hyps_per_generation_matrix, run_avg_fitness_matrix, run_parent_probs_matrix, run_selected_parent_indices_matrix, run_parent_lex_indices_matrix = [], [], [], [], []
@@ -93,7 +41,6 @@ def run_iteration(n_meanings, n_signals, n_iterations, report_every_i, turnover_
         ))
     else:
         n_procs = 1
-
 
     # 1) First the initial population is created:
 
@@ -130,13 +77,25 @@ def run_iteration(n_meanings, n_signals, n_iterations, report_every_i, turnover_
         if i == 0 or i % report_every_i == 0:
             print('iteration = {}'.format(i)),
 
-        selected_hyp_per_agent_matrix, avg_fitness, parent_probs, selected_parent_indices, parent_lex_indices, _ = population.pop_update(recording, context_generation, helpful_contexts, n_meanings, n_signals, error, turnover_type, selection_type, selection_weighting, communication_type, ca_measure_type, n_interactions, teacher_type, perspectives_per_agent=perspectives_per_agent, n_procs=n_procs, seed=random_seed)
+        selected_hyp_per_agent_matrix, avg_fitness, parent_probs, selected_parent_indices, parent_lex_indices, log_posteriors = population.pop_update(recording, context_generation, helpful_contexts, n_meanings, n_signals, error, turnover_type, selection_type, selection_weighting, communication_type, ca_measure_type, n_interactions, teacher_type, perspectives_per_agent=perspectives_per_agent, n_procs=n_procs, seed=random_seed)
 
         run_selected_hyps_per_generation_matrix.append(selected_hyp_per_agent_matrix)
         run_avg_fitness_matrix.append(avg_fitness)
         run_parent_probs_matrix.append(parent_probs)
         run_selected_parent_indices_matrix.append(selected_parent_indices)
         run_parent_lex_indices_matrix.append(parent_lex_indices)
+
+        hyp_space = population.hypothesis_space
+        hyp_inds = []
+        for hyp in selected_hyp_per_agent_matrix:
+            hyp_ind = hyp_space[hyp][1]
+            hyp_inds.append(list(argsort_informativity_per_lexicon).index(hyp_ind))
+
+        hist_values, _ = np.histogram(hyp_inds, bins=[0, min_info_indices[-1]+1, intermediate_info_indices[-1]+1, max_info_indices[-1]])
+        props = np.round(np.true_divide(hist_values,sum(hist_values)), 3)
+        print(' | proportions are {}'.format(props))
+        # print(selected_hyp_per_agent_matrix)
+        # print(hyp_inds)
 
     return run_selected_hyps_per_generation_matrix, run_avg_fitness_matrix, run_parent_probs_matrix, run_selected_parent_indices_matrix, run_parent_lex_indices_matrix
 
@@ -150,11 +109,15 @@ if __name__ == "__main__":
     config = ConfigParser.ConfigParser()
     print('loading config file...')
     config.read(args.config)
+    config_d = OrderedDict()
     if args.verbose:
         logging.debug('config parameters:')
         for section in config.sections():
             print('CONFIG {}'.format(section))
-            print(['{} = {}'.format(*v) for v in config.items(section)])
+            for k,v in config.items(section):
+                print('{} = {} ,'.format(k,v)),
+                config_d['{}.{}'.format(section, k)] = v
+            print('')
             print('-' * 20)
     # read_config(args.config)
 
@@ -163,8 +126,6 @@ if __name__ == "__main__":
     print('loading config variables...')
     if True: # for IDE collapsing this section :)
         root_path = config.get('paths', 'root_path')
-        pickle_file_directory = config.get('paths', 'pickle_file_directory')
-        plot_file_directory = config.get('paths', 'plot_file_directory')
         run_type_dir = config.get('paths', 'run_type_dir')
 
         n_meanings = config.getint('lexicon', 'n_meanings')
@@ -214,7 +175,10 @@ if __name__ == "__main__":
         ca_measure_type = config.get('simulation', 'ca_measure_type')
         n_interactions = config.getint('simulation', 'n_interactions')
         selection_type = config.get('simulation', 'selection_type')
-        selection_weighting = config.getfloat('simulation', 'selection_weighting')
+        try:
+            selection_weighting = config.getfloat('simulation', 'selection_weighting')
+        except ValueError:
+            selection_weighting = 'none'
         turnover_type = config.get('simulation', 'turnover_type')
         report_every_i = config.getint('simulation', 'report_every_i')
         cut_off_point = config.getint('simulation', 'cut_off_point')
@@ -232,6 +196,26 @@ if __name__ == "__main__":
     lexicon_hyps = get_lexicon_hyps(which_lexicon_hyps, n_meanings, n_signals)
     hypothesis_space = get_hypothesis_space(agent_type, perspective_hyps, lexicon_hyps, pop_size)
     lexicon_probs = np.array([0. for x in range(len(lexicon_hyps)-1)]+[1.])
+
+    ###
+    out_dirname = os.path.join(root_path, run_type_dir, args.run_name)
+    out_dir_pickle = os.path.join(out_dirname, 'pickles')
+    out_dir_plots = os.path.join(out_dirname, 'plots')
+
+    if not args.plot_only:
+        if os.path.exists(out_dirname):
+            if not args.overwrite:
+                print('{} exists, pass --overwrite to continue. exiting'.format(out_dirname))
+                sys.exit(-1)
+            else:
+                print('overwriting existing run...')
+        else:
+            os.makedirs(out_dir_pickle)
+            os.makedirs(out_dir_plots)
+        with open(os.path.join(out_dirname, 'params.json'), 'w') as f:
+            json.dump(config_d, f, indent=2)
+
+
 
     ###
     # CATEGORISING LEXICONS BY INFORMATIVENESS BELOW
@@ -265,12 +249,7 @@ if __name__ == "__main__":
     lexicon_hyps_sorted = lexicon_hyps[argsort_informativity_per_lexicon]
     logging.debug("lexicon_hyps_sorted.shape: {}".format(lexicon_hyps_sorted.shape))
 
-    filename = get_filename(context_generation, selection_type, n_runs, n_meanings, n_signals,
-        n_iterations, n_contexts, n_utterances, pop_size, pragmatic_level, optimality_alpha,
-        perspective_prior_type, lexicon_prior_type, which_lexicon_hyps, teacher_type,
-        communication_type, ca_measure_type, helpful_contexts, error, perspective_probs,
-        perspective_prior_strength, lexicon_prior_constant, learning_types, learning_type_probs,
-        selection_weighting)
+    pickle_file_title_all_results = os.path.join(out_dir_pickle, 'results.p')
 
     if not args.plot_only:
         all_results = {}
@@ -296,11 +275,11 @@ if __name__ == "__main__":
 
             results.append(result_tup)
 
-        selected_hyps_per_generation_matrix = [x[0] for x in results]
-        avg_fitness_matrix = [x[1] for x in results]
-        parent_probs_matrix = [x[2] for x in results]
-        selected_parent_indices_matrix = [x[3] for x in results]
-        parent_lex_indices_matrix = [x[4] for x in results]
+        selected_hyps_per_generation_matrix = np.array([x[0] for x in results])
+        avg_fitness_matrix = np.array([x[1] for x in results])
+        parent_probs_matrix = np.array([x[2] for x in results])
+        selected_parent_indices_matrix = np.array([x[3] for x in results])
+        parent_lex_indices_matrix = np.array([x[4] for x in results])
 
         all_results_dict = {'selected_hyps_per_generation_matrix': selected_hyps_per_generation_matrix,
                         'avg_fitness_matrix': avg_fitness_matrix,
@@ -313,8 +292,8 @@ if __name__ == "__main__":
         print('all runs took {:.2f}min total'.format(run_time_all_mins))
 
     else:
-        pickle_file_title_all_results = pickle_file_directory + run_type_dir + 'Results_' + filename
-        all_results_dict = pickle.load(open(pickle_file_title_all_results +'.p', 'rb'))
+        print("loading, not new run")
+        all_results_dict = pickle.load(open(pickle_file_title_all_results, 'rb'))
 
         selected_hyps_per_generation_matrix = all_results_dict['selected_hyps_per_generation_matrix']
         avg_fitness_matrix = all_results_dict['avg_fitness_matrix']
@@ -338,32 +317,29 @@ if __name__ == "__main__":
     ######
     # save to pickles
     if not args.plot_only:
-        if not os.path.exists(pickle_file_directory+run_type_dir):
-            os.makedirs(pickle_file_directory+run_type_dir)
-        pickle_file_title_all_results = pickle_file_directory + run_type_dir + '/Results_' + filename
-        pickle.dump(all_results_dict, open(pickle_file_title_all_results+'.p', 'wb'))
+        pickle.dump(all_results_dict, open(pickle_file_title_all_results, 'wb'))
 
+        pickle_file_title_max_offspring_single_parent = os.path.join(out_dir_pickle, 'max_offspring.p')
 
-        pickle_file_title_max_offspring_single_parent = pickle_file_directory + run_type_dir + '/Max_Offspring_' + filename
-
-        pickle.dump(proportion_max_offspring_single_parent_matrix, open(pickle_file_title_max_offspring_single_parent+'.p', 'wb'))
+        pickle.dump(proportion_max_offspring_single_parent_matrix, open(pickle_file_title_max_offspring_single_parent, 'wb'))
 
 
     ######
     # statistics for plotting
 
+    # dimensions are (run_idx x iteration x agent)
     selected_hyps_new_lex_order_all_runs = get_selected_hyps_ordered(n_runs, n_iterations, pop_size, selected_hyps_per_generation_matrix, argsort_informativity_per_lexicon)
 
     hypothesis_count_proportions, yerr_scaled_selected_hyps_for_plot = calc_mean_and_conf_invs_distribution(n_runs, 1, lexicon_hyps, which_hyps_on_graph, min_info_indices, intermediate_info_indices, max_info_indices, n_iterations, cut_off_point, selected_hyps_new_lex_order_all_runs)
 
+    calc_mean_and_conf_invs_distribution2(n_runs, 1, lexicon_hyps, which_hyps_on_graph, min_info_indices, intermediate_info_indices, max_info_indices, n_iterations, selected_hyps_new_lex_order_all_runs)
+
     print("hypothesis_count_proportions are: {}".format(hypothesis_count_proportions))
     print("yerr_scaled_selected_hyps_for_plot is: {}".format(yerr_scaled_selected_hyps_for_plot))
 
+    ###
     # do plotting
-    plot_file_path = plot_file_directory + run_type_dir
-    if not os.path.exists(plot_file_path):
-        os.makedirs(plot_file_path)
+    print("saving plots to {}".format(out_dir_plots))
 
     plot_title = 'Egocentric perspective prior & '+str(n_meanings)+'x'+str(n_signals)+' lexicons'
-
-    plots.plot_lex_distribution(plot_file_path, filename, plot_title, hypothesis_count_proportions, yerr_scaled_selected_hyps_for_plot, cut_off_point, text_size=1.6)
+    plots.plot_lex_distribution(out_dir_plots, 'lex_dist.png', plot_title, hypothesis_count_proportions, yerr_scaled_selected_hyps_for_plot, cut_off_point, text_size=1.6)
