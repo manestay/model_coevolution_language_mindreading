@@ -1,3 +1,7 @@
 **/*logs/*
 **/pickles/*
 *.pyc
+results*/
+*.e*
+*.o*
+run.sh

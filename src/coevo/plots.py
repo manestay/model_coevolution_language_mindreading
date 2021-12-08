@@ -1,6 +1,7 @@
 __author__ = 'pplsuser'
 
 import os
+import logging
 
 import itertools
 import matplotlib
@@ -13,6 +14,7 @@ from hypspace import get_sorted_lex_hyp_order
 import prior
 
 
+logging.getLogger('matplotlib').setLevel(logging.WARNING)
 #############################################################################
 # STEP 11: The functions below are used to create plots:
 
@@ -54,7 +56,7 @@ def plot_lex_distribution(plot_file_path, plot_file_title, plot_title, hypothesi
     ax.set_ylabel('Proportion over generations', labelpad=10)
     ax.set_title(plot_title, y=1.05, fontweight='bold')
     plt.gcf().subplots_adjust(bottom=0.15, top=0.85)  # This makes room for the xlabel and title
-    fname = os.path.join(plot_file_path, 'Plot_Prop_Hyps_'+plot_file_title+'_cutoff_'+str(cut_off_point)+'.png')
+    fname = os.path.join(plot_file_path, plot_file_title)
     plt.savefig(fname)
     plt.show()
 
@@ -92,7 +94,8 @@ def plot_timecourse_scores_percentiles(plot_title, plot_file_path, plot_file_tit
     ax.set_xlabel("No. observations")
     ax.set_ylabel("Posterior probability")
     ax.legend(loc='best')
-    plt.savefig(plot_file_path+'/Timecrse_Scores_Med_Perc_'+plot_file_title+'.png')
+    fname = os.path.join(plot_file_path, 'Timecrse_Scores_Med_Perc_'+plot_file_title+'.png')
+    plt.savefig(fname)
     plt.show()
 
 
@@ -127,7 +130,8 @@ def plot_timecourse_scores_percentiles_without_error_median(plot_title, plot_fil
     ax.set_xlabel("No. observations")
     ax.set_ylabel("Posterior probability")
     ax.legend(loc='center right')
-    plt.savefig(plot_file_path+'/Timecrse_Scores_Med_'+plot_file_title+'.png')
+    fname = os.path.join(plot_file_path,'/Timecrse_Scores_Med_'+plot_file_title+'.png')
+    plt.savefig(fname)
     plt.show()
 
 
@@ -162,7 +166,8 @@ def plot_timecourse_scores_percentiles_without_error_mean(plot_title, plot_file_
     ax.set_xlabel("No. observations")
     ax.set_ylabel("Posterior probability")
     ax.legend(loc='center right')
-    plt.savefig(plot_file_path+'/Timecrse_Scores_Mean_'+plot_file_title+'.png')
+    fname = os.path.join(plot_file_path,'Timecrse_Scores_Mean_'+plot_file_title+'.png')
+    plt.savefig(fname)
     plt.show()
 
 
@@ -201,7 +206,8 @@ def plot_timecourse_scores_percentiles_with_speaker_distinction(plot_title, plot
     ax.set_xlabel("No. observations")
     ax.set_ylabel("Posterior probability")
     ax.legend(loc='center right')
-    plt.savefig(plot_file_path+'/Timecrse_Scores_Med_Perc_'+plot_file_title+'.png')
+    fname = os.path.join(plot_file_path,'Timecrse_Scores_Med_Perc_'+plot_file_title+'.png')
+    plt.savefig(fname)
     plt.show()
 
 
@@ -236,7 +242,8 @@ def plot_timecourse_scores_percentiles_without_error_median_with_speaker_distinc
     ax.set_xlabel("No. observations")
     ax.set_ylabel("Posterior probability")
     ax.legend(loc='center right')
-    plt.savefig(plot_file_path+'/Timecrse_Scores_Med_'+plot_file_title+'.png')
+    fname = os.path.join(plot_file_path,'Timecrse_Scores_Med_'+plot_file_title+'.png')
+    plt.savefig()
     plt.show()
 
 
@@ -271,7 +278,8 @@ def plot_timecourse_scores_percentiles_without_error_mean_with_speaker_distincti
     ax.set_xlabel("No. observations")
     ax.set_ylabel("Posterior probability")
     ax.legend(loc='center right')
-    plt.savefig(plot_file_path+'/Timecrse_Scores_Mean_'+plot_file_title+'.png')
+    fname = os.path.join(plot_file_path,'Timecrse_Scores_Mean_'+plot_file_title+'.png')
+    plt.savefig(fname)
     plt.show()
 
 
@@ -310,7 +318,8 @@ def plot_timecourse_scores_percentiles_med_perc_one_hyp_type(plot_title, plot_fi
     ax.set_xlabel("No. observations")
     ax.set_ylabel("Posterior probability")
     ax.legend(loc='center right')
-    plt.savefig(plot_file_path+'/Timecrse_Scores_Comp_Only_'+plot_file_title+'_'+which_hyp_type+'.png')
+    fname = os.path.join(plot_file_path, 'Timecrse_Scores_Comp_Only_'+plot_file_title+'_'+which_hyp_type+'.png')
+    plt.savefig(fname)
     plt.show()
 
 
@@ -1206,6 +1215,7 @@ def plot_one_iteration_run_hist_hypothesis(plot_file_path, plot_file_title, hypo
 
         # n, bins, patches = plt.hist(selected_hyp_per_generation_sorted, bins=len(hypothesis_space))
         bins = np.arange((len(lexicon_hyps) * len(perspective_hyps)))
+
         plt.bar(bins, selected_hyp_per_generation_sorted, yerr=conf_intervals, error_kw=dict(ecolor='black', lw=1, capsize=5, capthick=1))
 
     elif which_hyps_on_graph == 'lex_hyps_only':
@@ -1279,7 +1289,8 @@ def plot_one_iteration_run_hist_hypothesis(plot_file_path, plot_file_title, hypo
 
     plt.gcf().subplots_adjust(bottom=0.15) # This makes room for the xlabel which would otherwise be cut off because of the rotation of the xticks
 
-    plt.savefig(plot_file_path+'Plot_Prop_Hyps_'+plot_file_title+'_cutoff_'+str(cut_off_point)+'.png')
+    fname = os.path.join(plot_file_path, plot_file_title)
+    plt.savefig(fname)
     plt.show()
 
 

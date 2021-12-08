@@ -1,4 +1,5 @@
 import numpy as np
+from scipy import stats
 
 import hypspace
 import saveresults
@@ -78,7 +79,7 @@ def get_hypothesis_space(agent_type, perspective_hyps, lexicon_hyps, pop_size):
     return hypothesis_space
 
 
-def get_filename(context_generation, selection_type, n_runs, n_meanings, n_signals, n_iterations, n_contexts, n_utterances, pop_size, pragmatic_level, optimality_alpha, perspective_prior_type, lexicon_prior_type, which_lexicon_hyps, teacher_type, communication_type, ca_measure_type, helpful_contexts,
+def get_dirname(context_generation, selection_type, n_runs, n_meanings, n_signals, n_iterations, n_contexts, n_utterances, pop_size, pragmatic_level, optimality_alpha, perspective_prior_type, lexicon_prior_type, which_lexicon_hyps, teacher_type, communication_type, ca_measure_type, helpful_contexts,
                  error, perspective_probs, perspective_prior_strength, lexicon_prior_constant, learning_types, learning_type_probs, selection_weighting):
     perspective_probs_string = saveresults.convert_array_to_string(perspective_probs)
     perspective_prior_strength_string = saveresults.convert_array_to_string(
@@ -91,16 +92,16 @@ def get_filename(context_generation, selection_type, n_runs, n_meanings, n_signa
 
     if context_generation == 'random':
         if selection_type == 'none' or selection_type == 'l_learning':
-            filename = 'iter_'+str(n_meanings)+'M_'+str(n_signals)+'S'+'_size_'+str(pop_size)+'_select_'+selection_type+'_'+str(n_runs)+'_R_'+str(n_iterations)+'_I_'+str(n_contexts)+'_C_'+str(context_generation)+'_'+str(n_utterances)+'_U_'+'err_'+str(error)+'_'+pragmatic_level+'_a_'+str(
+            dirname = 'iter_'+str(n_meanings)+'M_'+str(n_signals)+'S'+'_size_'+str(pop_size)+'_select_'+selection_type+'_'+str(n_runs)+'_R_'+str(n_iterations)+'_I_'+str(n_contexts)+'_C_'+str(context_generation)+'_'+str(n_utterances)+'_U_'+'err_'+str(error)+'_'+pragmatic_level+'_a_'+str(
                 optimality_alpha)[0]+'_p_probs_'+perspective_probs_string+'_p_prior_'+str(perspective_prior_type)[0:4]+'_'+perspective_prior_strength_string+'_'+which_lexicon_hyps+'_l_prior_'+str(lexicon_prior_type)[0:4]+'_'+lexicon_prior_constant_string+'_'+learning_type_string+'_'+teacher_type
         elif selection_type == 'p_taking':
-            filename = 'iter_'+str(n_meanings)+'M_'+str(n_signals)+'S'+'_size_'+str(pop_size)+'_select_'+selection_type+'_weight_'+str(selection_weighting)+'_'+str(n_runs)+'_R_'+str(n_iterations)+'_I_'+str(n_contexts)+'_C_'+str(context_generation)+'_'+str(n_utterances)+'_U_'+'err_'+str(error)+'_'+pragmatic_level + \
+            dirname = 'iter_'+str(n_meanings)+'M_'+str(n_signals)+'S'+'_size_'+str(pop_size)+'_select_'+selection_type+'_weight_'+str(selection_weighting)+'_'+str(n_runs)+'_R_'+str(n_iterations)+'_I_'+str(n_contexts)+'_C_'+str(context_generation)+'_'+str(n_utterances)+'_U_'+'err_'+str(error)+'_'+pragmatic_level + \
                 '_a_'+str(optimality_alpha)[0]+'_p_probs_'+perspective_probs_string+'_p_prior_'+str(perspective_prior_type)[0:4]+'_'+perspective_prior_strength_string + \
                 '_'+which_lexicon_hyps+'_l_prior_' + \
                 str(lexicon_prior_type)[0:4]+'_'+lexicon_prior_constant_string + \
                 '_'+learning_type_string+'_'+teacher_type
         elif selection_type == 'ca_with_parent':
-            filename = 'iter_'+str(n_meanings)+'M_'+str(n_signals)+'S'+'_size_'+str(pop_size)+'_select_'+selection_type+'_'+communication_type+'_'+ca_measure_type+'_'+str(n_runs)+'_R_'+str(n_iterations)+'_I_'+str(n_contexts)+'_C_'+str(context_generation)+'_'+str(n_utterances)+'_U_'+'err_'+str(error)+'_'+pragmatic_level + \
+            dirname = 'iter_'+str(n_meanings)+'M_'+str(n_signals)+'S'+'_size_'+str(pop_size)+'_select_'+selection_type+'_'+communication_type+'_'+ca_measure_type+'_'+str(n_runs)+'_R_'+str(n_iterations)+'_I_'+str(n_contexts)+'_C_'+str(context_generation)+'_'+str(n_utterances)+'_U_'+'err_'+str(error)+'_'+pragmatic_level + \
                 '_a_'+str(optimality_alpha)[0]+'_p_probs_'+perspective_probs_string+'_p_prior_'+str(perspective_prior_type)[0:4]+'_'+perspective_prior_strength_string + \
                 '_'+which_lexicon_hyps+'_l_prior_' + \
                 str(lexicon_prior_type)[0:4]+'_'+lexicon_prior_constant_string + \
@@ -108,15 +109,44 @@ def get_filename(context_generation, selection_type, n_runs, n_meanings, n_signa
 
     elif context_generation == 'only_helpful' or context_generation == 'optimal':
         if selection_type == 'none' or selection_type == 'l_learning':
-            filename = 'iter_'+str(n_meanings)+'M_'+str(n_signals)+'S'+'_size_'+str(pop_size)+'_select_'+selection_type+'_'+str(n_runs)+'_R_'+str(n_iterations)+'_I_'+str(n_contexts)+'_C_'+str(context_generation)+'_'+str(len(helpful_contexts))+'_'+str(n_utterances)+'_U_'+'err_'+str(error)+'_'+pragmatic_level + \
+            dirname = 'iter_'+str(n_meanings)+'M_'+str(n_signals)+'S'+'_size_'+str(pop_size)+'_select_'+selection_type+'_'+str(n_runs)+'_R_'+str(n_iterations)+'_I_'+str(n_contexts)+'_C_'+str(context_generation)+'_'+str(len(helpful_contexts))+'_'+str(n_utterances)+'_U_'+'err_'+str(error)+'_'+pragmatic_level + \
                 '_a_'+str(optimality_alpha)[0]+'_p_probs_'+perspective_probs_string+'_p_prior_'+str(perspective_prior_type)[0:4]+'_'+perspective_prior_strength_string + \
                 '_'+which_lexicon_hyps+'_l_prior_' + \
                 str(lexicon_prior_type)[0:4]+'_'+lexicon_prior_constant_string + \
                 '_'+learning_type_string+'_'+teacher_type
         elif selection_type == 'p_taking':
-            filename = 'iter_'+str(n_meanings)+'M_'+str(n_signals)+'S'+'_size_'+str(pop_size)+'_select_'+selection_type+'_weight_'+str(selection_weighting)+'_'+str(n_runs)+'_R_'+str(n_iterations)+'_I_'+str(n_contexts)+'_C_'+str(context_generation)+'_'+str(len(helpful_contexts))+'_'+str(n_utterances)+'_U_'+'err_'+str(
+            dirname = 'iter_'+str(n_meanings)+'M_'+str(n_signals)+'S'+'_size_'+str(pop_size)+'_select_'+selection_type+'_weight_'+str(selection_weighting)+'_'+str(n_runs)+'_R_'+str(n_iterations)+'_I_'+str(n_contexts)+'_C_'+str(context_generation)+'_'+str(len(helpful_contexts))+'_'+str(n_utterances)+'_U_'+'err_'+str(
                 error)+'_'+pragmatic_level+'_a_'+str(optimality_alpha)[0]+'_p_probs_'+perspective_probs_string+'_p_prior_'+str(perspective_prior_type)[0:4]+'_'+perspective_prior_strength_string+'_'+which_lexicon_hyps+'_l_prior_'+str(lexicon_prior_type)[0:4]+'_'+lexicon_prior_constant_string+'_'+learning_type_string+'_'+teacher_type
         elif selection_type == 'ca_with_parent':
-            filename = 'iter_'+str(n_meanings)+'M_'+str(n_signals)+'S'+'_size_'+str(pop_size)+'_select_'+selection_type+'_'+communication_type+'_'+ca_measure_type+'_'+str(n_runs)+'_R_'+str(n_iterations)+'_I_'+str(n_contexts)+'_C_'+str(context_generation)+'_'+str(len(helpful_contexts))+'_'+str(n_utterances)+'_U_'+'err_'+str(
+            dirname = 'iter_'+str(n_meanings)+'M_'+str(n_signals)+'S'+'_size_'+str(pop_size)+'_select_'+selection_type+'_'+communication_type+'_'+ca_measure_type+'_'+str(n_runs)+'_R_'+str(n_iterations)+'_I_'+str(n_contexts)+'_C_'+str(context_generation)+'_'+str(len(helpful_contexts))+'_'+str(n_utterances)+'_U_'+'err_'+str(
                 error)+'_'+pragmatic_level+'_a_'+str(optimality_alpha)[0]+'_p_probs_'+perspective_probs_string+'_p_prior_'+str(perspective_prior_type)[0:4]+'_'+perspective_prior_strength_string+'_'+which_lexicon_hyps+'_l_prior_'+str(lexicon_prior_type)[0:4]+'_'+lexicon_prior_constant_string+'_'+learning_type_string+'_'+teacher_type
-    return filename
+    return dirname
+
+def read_config(fname):
+    # helper function to print python code to load config to variables
+    # some post-processing required for non-str types and lists!
+    section = ''
+    with open(fname, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith('#') or not line:
+                continue
+            elif line.startswith('['):
+                section = line.strip('\n[]')
+                continue
+            key, value = [x.strip() for x in line.split('=')]
+            print("{} = config.get('{}', '{}')".format(key, section, key))
+
+
+def get_selected_hyps_ordered(n_runs, n_iterations, pop_size, multi_run_selected_hyps_per_generation_matrix, hyp_order):
+    multi_run_selected_hyps_per_generation_matrix = np.array(multi_run_selected_hyps_per_generation_matrix)
+    selected_hyps_new_lex_order_all_runs = np.zeros_like(multi_run_selected_hyps_per_generation_matrix)
+    for r in range(n_runs):
+        for i in range(n_iterations):
+            for a in range(pop_size):
+                this_agent_hyp = multi_run_selected_hyps_per_generation_matrix[r][i][a]
+                if this_agent_hyp >= len(hyp_order):
+                    this_agent_hyp = this_agent_hyp-len(hyp_order)
+                new_order_index = np.argwhere(hyp_order == this_agent_hyp)
+                selected_hyps_new_lex_order_all_runs[r][i][a] = new_order_index
+    return selected_hyps_new_lex_order_all_runs
