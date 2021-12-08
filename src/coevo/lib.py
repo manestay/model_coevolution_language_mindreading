@@ -137,16 +137,10 @@ def read_config(fname):
             key, value = [x.strip() for x in line.split('=')]
             print("{} = config.get('{}', '{}')".format(key, section, key))
 
-
-def get_selected_hyps_ordered(n_runs, n_iterations, pop_size, multi_run_selected_hyps_per_generation_matrix, hyp_order):
-    multi_run_selected_hyps_per_generation_matrix = np.array(multi_run_selected_hyps_per_generation_matrix)
-    selected_hyps_new_lex_order_all_runs = np.zeros_like(multi_run_selected_hyps_per_generation_matrix)
-    for r in range(n_runs):
-        for i in range(n_iterations):
-            for a in range(pop_size):
-                this_agent_hyp = multi_run_selected_hyps_per_generation_matrix[r][i][a]
-                if this_agent_hyp >= len(hyp_order):
-                    this_agent_hyp = this_agent_hyp-len(hyp_order)
-                new_order_index = np.argwhere(hyp_order == this_agent_hyp)
-                selected_hyps_new_lex_order_all_runs[r][i][a] = new_order_index
-    return selected_hyps_new_lex_order_all_runs
+def get_hyp_inds(selected_hyp_per_agent_matrix, argsort_informativity_per_lexicon, hyp_space):
+    # get the
+    hyp_inds = []
+    for hyp in selected_hyp_per_agent_matrix:
+        hyp_ind = hyp_space[hyp][1]
+        hyp_inds.append(list(argsort_informativity_per_lexicon).index(hyp_ind))
+    return hyp_inds

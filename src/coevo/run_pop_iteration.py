@@ -17,8 +17,8 @@ import plots
 import pop
 import prior
 from lib import get_helpful_contexts, get_lexicon_hyps, get_hypothesis_space, read_config, \
-                get_selected_hyps_ordered
-from plot_lib import *
+                get_hyp_inds
+from plot_lib import calc_lex_hyp_proportions, plot_informativeness_over_gens, calc_p_taking_success
 
 
 parser = argparse.ArgumentParser()
@@ -86,16 +86,10 @@ def run_iteration(n_meanings, n_signals, n_iterations, report_every_i, turnover_
         run_parent_lex_indices_matrix.append(parent_lex_indices)
 
         hyp_space = population.hypothesis_space
-        hyp_inds = []
-        for hyp in selected_hyp_per_agent_matrix:
-            hyp_ind = hyp_space[hyp][1]
-            hyp_inds.append(list(argsort_informativity_per_lexicon).index(hyp_ind))
+        hyp_inds = get_hyp_inds(selected_hyp_per_agent_matrix, argsort_informativity_per_lexicon, hyp_space)
 
-        hist_values, _ = np.histogram(hyp_inds, bins=[0, min_info_indices[-1]+1, intermediate_info_indices[-1]+1, max_info_indices[-1]])
-        props = np.round(np.true_divide(hist_values,sum(hist_values)), 3)
-        print(' | proportions are {}'.format(props))
-        # print(selected_hyp_per_agent_matrix)
-        # print(hyp_inds)
+        props = calc_lex_hyp_proportions(hyp_inds, min_info_indices, intermediate_info_indices, max_info_indices)
+        print(' | lex proportions are {}'.format(props))
 
     return run_selected_hyps_per_generation_matrix, run_avg_fitness_matrix, run_parent_probs_matrix, run_selected_parent_indices_matrix, run_parent_lex_indices_matrix
 
@@ -210,6 +204,7 @@ if __name__ == "__main__":
             else:
                 print('overwriting existing run...')
         else:
+            os.makedirs(out_dirname)
             os.makedirs(out_dir_pickle)
             os.makedirs(out_dir_plots)
         with open(os.path.join(out_dirname, 'params.json'), 'w') as f:
@@ -294,7 +289,7 @@ if __name__ == "__main__":
     else:
         print("loading, not new run")
         all_results_dict = pickle.load(open(pickle_file_title_all_results, 'rb'))
-
+        print('loaded')
         selected_hyps_per_generation_matrix = all_results_dict['selected_hyps_per_generation_matrix']
         avg_fitness_matrix = all_results_dict['avg_fitness_matrix']
         parent_probs_matrix = all_results_dict['parent_probs_matrix']
@@ -328,18 +323,35 @@ if __name__ == "__main__":
     # statistics for plotting
 
     # dimensions are (run_idx x iteration x agent)
-    selected_hyps_new_lex_order_all_runs = get_selected_hyps_ordered(n_runs, n_iterations, pop_size, selected_hyps_per_generation_matrix, argsort_informativity_per_lexicon)
+    selected_hyps_new_lex_order_all_runs = []
+    proportions = []
+    for run in selected_hyps_per_generation_matrix:
+        selected_hyps_new_lex_order_all_runs.append([])
+        proportions.append([])
+        for row in run:
+            hyp_inds = get_hyp_inds(row, argsort_informativity_per_lexicon, hypothesis_space)
+            selected_hyps_new_lex_order_all_runs[-1].append(hyp_inds)
+            props = calc_lex_hyp_proportions(hyp_inds, min_info_indices, intermediate_info_indices, max_info_indices)
+            proportions[-1].append(props)
+    selected_hyps_new_lex_order_all_runs = np.array(selected_hyps_new_lex_order_all_runs)
+    proportions = np.array(proportions)
+    # for i, props in enumerate(proportions.mean(axis=0)):
+    #     print('run {} proportions are {}'.format(i, props))
 
-    hypothesis_count_proportions, yerr_scaled_selected_hyps_for_plot = calc_mean_and_conf_invs_distribution(n_runs, 1, lexicon_hyps, which_hyps_on_graph, min_info_indices, intermediate_info_indices, max_info_indices, n_iterations, cut_off_point, selected_hyps_new_lex_order_all_runs)
+    # hypothesis_count_proportions, yerr_scaled_selected_hyps_for_plot = calc_mean_and_conf_invs_distribution(n_runs, 1, lexicon_hyps, which_hyps_on_graph, min_info_indices, intermediate_info_indices, max_info_indices, n_iterations, cut_off_point, selected_hyps_new_lex_order_all_runs)
 
-    calc_mean_and_conf_invs_distribution2(n_runs, 1, lexicon_hyps, which_hyps_on_graph, min_info_indices, intermediate_info_indices, max_info_indices, n_iterations, selected_hyps_new_lex_order_all_runs)
-
-    print("hypothesis_count_proportions are: {}".format(hypothesis_count_proportions))
-    print("yerr_scaled_selected_hyps_for_plot is: {}".format(yerr_scaled_selected_hyps_for_plot))
+    # print("hypothesis_count_proportions are: {}".format(hypothesis_count_proportions))
+    # print("yerr_scaled_selected_hyps_for_plot is: {}".format(yerr_scaled_selected_hyps_for_plot))
 
     ###
     # do plotting
     print("saving plots to {}".format(out_dir_plots))
 
-    plot_title = 'Egocentric perspective prior & '+str(n_meanings)+'x'+str(n_signals)+' lexicons'
-    plots.plot_lex_distribution(out_dir_plots, 'lex_dist.png', plot_title, hypothesis_count_proportions, yerr_scaled_selected_hyps_for_plot, cut_off_point, text_size=1.6)
+    # plot_title = 'Egocentric perspective prior & '+str(n_meanings)+'x'+str(n_signals)+' lexicons'
+    # plots.plot_lex_distribution(out_dir_plots, 'inform_.png', plot_title, hypothesis_count_proportions, yerr_scaled_selected_hyps_for_plot, cut_off_point, text_size=1.6)
+    plot_informativeness_over_gens(proportions, out_dir_plots, 'lex_dist_over_gens.png')
+
+    for selected_hyps_per_generation, selected_parent_indices in \
+            zip(selected_hyps_per_generation_matrix, selected_parent_indices_matrix):
+        avg_success_per_gen = calc_p_taking_success(selected_hyps_per_generation, selected_parent_indices, hypothesis_space, perspective_hyps, perspective_probs)
+        print(avg_success_per_gen)
