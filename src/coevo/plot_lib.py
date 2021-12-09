@@ -14,6 +14,7 @@ import context
 import lex
 import prior
 import pop
+import measur
 
 logging.getLogger('matplotlib').setLevel(logging.WARNING)
 copy_specification = ''  # Can be set to e.g. '_c1' or simply to '' if there is only one copy
@@ -86,23 +87,88 @@ def plot_informativeness_over_gens(proportions, plot_file_path, plot_file_title)
     plt.savefig(fname)
     plt.show()
 
-def calc_p_taking_success(selected_hyps_per_generation_matrix, selected_parent_indices_matrix, hypothesis_space, perspective_hyps, perspective_probs):
+def calc_p_taking_success(selected_hyps_per_generation_matrix, selected_parent_indices_matrix, hypothesis_space, perspective_hyp):
     avg_success_per_generation = np.zeros(len(selected_parent_indices_matrix))
-    parent_perspective_index = perspective_probs.index(1.0)
-    parent_perspective = perspective_hyps[parent_perspective_index]
+    parent_perspective = 1
     for i in range(len(selected_hyps_per_generation_matrix)):
         if i == 0:
             avg_success_per_generation[i] = 'NaN'
         else:
             selected_hyps_per_agent = selected_hyps_per_generation_matrix[i]
+            # success_per_agent = np.zeros(len(selected_hyps_per_agent))
+            # for a in range(len(selected_hyps_per_agent)):
+            #     selected_hyp_index_agent = selected_hyps_per_agent[a]
+            #     selected_hyp_agent = hypothesis_space[int(selected_hyp_index_agent)]
+            #     learner_p_hyp = perspective_hyps[selected_hyp_agent[0]]
+            #     if learner_p_hyp == parent_perspective:
+            #         success_per_agent[a] = 1.
+            #     else:
+            #         success_per_agent[a] = 0.
+            success_per_agent = np.array([hypothesis_space[x][0] == parent_perspective for x in selected_hyps_per_agent])
+            avg_success_per_generation[i] = np.mean(success_per_agent)
+            parent_perspective = 1 - parent_perspective
+    return avg_success_per_generation
+
+
+def calc_communication_success(selected_hyps_per_generation_matrix, selected_parent_indices_matrix,
+        pragmatic_level_parent, pragmatic_level_learner, communication_type, ca_measure_type, n_interactions,
+        hypothesis_space, perspective_hyps, lexicon_hyps, perspective_prior_type, perspective_prior_strength,
+        lexicon_prior_type, lexicon_prior_constant, learner_perspective, learning_types, learning_type_probs,
+        sal_alpha, error, agent_type, pop_size, n_meanings, n_signals, n_utterances):
+    avg_success_per_generation = np.zeros(len(selected_parent_indices_matrix))
+    parent_perspective = 1
+    learning_type_index = learning_type_probs.index(1.0)
+    learning_type = learning_types[learning_type_index]
+    perspective_prior = prior.create_perspective_prior(perspective_hyps, lexicon_hyps, perspective_prior_type, learner_perspective, perspective_prior_strength)
+    lexicon_prior = prior.create_lexicon_prior(lexicon_hyps, lexicon_prior_type, lexicon_prior_constant, error)
+    composite_log_prior = prior.list_composite_log_priors(agent_type, pop_size, hypothesis_space, perspective_hyps, lexicon_hyps, perspective_prior, lexicon_prior)
+    for i in range(len(selected_hyps_per_generation_matrix)):
+        if i == 0:
+            avg_success_per_generation[i] = 'NaN'
+        else:
+            selected_hyps_per_agent = selected_hyps_per_generation_matrix[i]
+            selected_hyps_per_parent = selected_hyps_per_generation_matrix[i-1]
+            selected_parent_indices_per_agent = selected_parent_indices_matrix[i]
             success_per_agent = np.zeros(len(selected_hyps_per_agent))
             for a in range(len(selected_hyps_per_agent)):
+                parent_index = selected_parent_indices_per_agent[a]
                 selected_hyp_index_agent = selected_hyps_per_agent[a]
                 selected_hyp_agent = hypothesis_space[int(selected_hyp_index_agent)]
-                learner_p_hyp = perspective_hyps[selected_hyp_agent[0]]
-                if learner_p_hyp == parent_perspective:
-                    success_per_agent[a] = 1.
-                else:
-                    success_per_agent[a] = 0.
+                learner_lex_matrix = lexicon_hyps[selected_hyp_agent[1]]
+                learner_lexicon = lex.Lexicon('specified_lexicon', n_meanings, n_signals, ambiguous_lex=None, specified_lexicon=learner_lex_matrix)
+                selected_hyp_index_parent = selected_hyps_per_parent[int(parent_index)]
+                selected_hyp_parent = hypothesis_space[int(selected_hyp_index_parent)]
+                parent_lex_matrix = lexicon_hyps[selected_hyp_parent[1]]
+                parent_lexicon = lex.Lexicon('specified_lexicon', n_meanings, n_signals, ambiguous_lex=None, specified_lexicon=parent_lex_matrix)
+                if pragmatic_level_parent == 'literal' or pragmatic_level_parent == 'perspective-taking':
+                    parent = pop.Agent(perspective_hyps, lexicon_hyps, composite_log_prior, composite_log_prior, parent_perspective, sal_alpha, parent_lexicon, 'sample')
+                if pragmatic_level_learner == 'literal' or pragmatic_level_learner == 'perspective-taking':
+                    learner = pop.Agent(perspective_hyps, lexicon_hyps, composite_log_prior, composite_log_prior, learner_perspective, sal_alpha, learner_lexicon, learning_type)
+                context_matrix = context.gen_context_matrix('continuous', n_meanings, n_meanings, n_interactions)
+                ca = measur.calc_comm_acc(context_matrix, communication_type, ca_measure_type, n_interactions, n_utterances, parent, learner, n_meanings, n_signals, sal_alpha, error, parent.pragmatic_level, s_p_hyp=parent.perspective, s_type_hyp=parent.pragmatic_level)
+                success_per_agent[a] = ca
             avg_success_per_generation[i] = np.mean(success_per_agent)
+            parent_perspective = 1 - parent_perspective
     return avg_success_per_generation
+
+def plot_success_over_gens(avg_pt_success_per_gen, avg_ca_success_per_gen, plot_file_path, plot_file_title):
+    gens = np.arange(0, len(avg_pt_success_per_gen))
+
+    sns.set_style("whitegrid")
+    sns.set_palette("deep")
+    sns.set(font_scale=1.6)
+    lex_type_labels = ['communication', 'p-inference']
+    ind = np.arange(len(lex_type_labels))
+    width = 0.25
+    with sns.axes_style("whitegrid"):
+        fig, ax = plt.subplots()
+        ax.plot(gens, avg_pt_success_per_gen, 'r', label='p-inference')
+        ax.plot(gens, avg_ca_success_per_gen, 'y', label='comm_acc')
+
+    ax.set_ylim(0.0, 1.0)
+    ax.set_xlabel('Generations')
+    ax.set_ylabel('Mean success')
+    fname = os.path.join(plot_file_path, plot_file_title)
+    plt.tight_layout()
+    plt.savefig(fname)
+    plt.show()

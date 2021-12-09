@@ -18,7 +18,8 @@ import pop
 import prior
 from lib import get_helpful_contexts, get_lexicon_hyps, get_hypothesis_space, read_config, \
                 get_hyp_inds
-from plot_lib import calc_lex_hyp_proportions, plot_informativeness_over_gens, calc_p_taking_success
+from plot_lib import calc_lex_hyp_proportions, calc_p_taking_success, calc_communication_success, \
+                     plot_informativeness_over_gens, plot_success_over_gens
 
 
 parser = argparse.ArgumentParser()
@@ -66,17 +67,16 @@ def run_iteration(n_meanings, n_signals, n_iterations, report_every_i, turnover_
 
     elif agent_type == 'no_p_distinction':
         perspectives_per_agent = None
-        population = pop.Population(pop_size, n_meanings, n_signals, hypothesis_space, perspective_hyps, lexicon_hyps, learner_perspective, perspective_prior_type, perspective_prior_strength, lexicon_prior_type, lexicon_prior_constant, perspectives, perspective_probs, sal_alpha, lexicon_probs, error, extra_error, pragmatic_level, optimality_alpha, n_contexts, context_type, context_generation, context_size, helpful_contexts, n_utterances, learning_types, learning_type_probs)
-
+        population = pop.Population(pop_size, n_meanings, n_signals, hypothesis_space, perspective_hyps, lexicon_hyps, perspective_prior_type, perspective_prior_strength, lexicon_prior_type, lexicon_prior_constant, perspectives, sal_alpha, lexicon_probs, error, extra_error, pragmatic_level, optimality_alpha, n_contexts, context_type, context_generation, context_size, helpful_contexts, n_utterances, learning_types, learning_type_probs)
     if print_pop:
         print('initial population for run 0 is: {}')
         population.print_population()
 
     for i in range(n_iterations):
+        parent_perspective = population.perspective
         random_seed = run_idx * 1000 + i
         if i == 0 or i % report_every_i == 0:
             print('iteration = {}'.format(i)),
-
         selected_hyp_per_agent_matrix, avg_fitness, parent_probs, selected_parent_indices, parent_lex_indices, log_posteriors = population.pop_update(recording, context_generation, helpful_contexts, n_meanings, n_signals, error, turnover_type, selection_type, selection_weighting, communication_type, ca_measure_type, n_interactions, teacher_type, perspectives_per_agent=perspectives_per_agent, n_procs=n_procs, seed=random_seed)
 
         run_selected_hyps_per_generation_matrix.append(selected_hyp_per_agent_matrix)
@@ -88,8 +88,13 @@ def run_iteration(n_meanings, n_signals, n_iterations, report_every_i, turnover_
         hyp_space = population.hypothesis_space
         hyp_inds = get_hyp_inds(selected_hyp_per_agent_matrix, argsort_informativity_per_lexicon, hyp_space)
 
+        persp_hyps = []
+        for hyp in selected_hyp_per_agent_matrix:
+            persp_hyps.append(hyp_space[hyp][0])
+        persp_prop = persp_hyps.count(parent_perspective) / float(len(persp_hyps))
+        print(' | persp prop is {}'.format(persp_prop)),
         props = calc_lex_hyp_proportions(hyp_inds, min_info_indices, intermediate_info_indices, max_info_indices)
-        print(' | lex proportions are {}'.format(props))
+        print(' | lex props are {}'.format(props))
 
     return run_selected_hyps_per_generation_matrix, run_avg_fitness_matrix, run_parent_probs_matrix, run_selected_parent_indices_matrix, run_parent_lex_indices_matrix
 
@@ -345,13 +350,30 @@ if __name__ == "__main__":
 
     ###
     # do plotting
-    print("saving plots to {}".format(out_dir_plots))
-
     # plot_title = 'Egocentric perspective prior & '+str(n_meanings)+'x'+str(n_signals)+' lexicons'
     # plots.plot_lex_distribution(out_dir_plots, 'inform_.png', plot_title, hypothesis_count_proportions, yerr_scaled_selected_hyps_for_plot, cut_off_point, text_size=1.6)
+    print('plotting to {}'.format(os.path.join(out_dir_plots, 'lex_dist_over_gens.png')))
     plot_informativeness_over_gens(proportions, out_dir_plots, 'lex_dist_over_gens.png')
 
+    avg_pt_success_per_gen = np.zeros(n_iterations)
+    avg_ca_success_per_gen = np.zeros(n_iterations)
+    np.random.seed(0)
     for selected_hyps_per_generation, selected_parent_indices in \
             zip(selected_hyps_per_generation_matrix, selected_parent_indices_matrix):
-        avg_success_per_gen = calc_p_taking_success(selected_hyps_per_generation, selected_parent_indices, hypothesis_space, perspective_hyps, perspective_probs)
-        print(avg_success_per_gen)
+        pt_success = calc_p_taking_success(selected_hyps_per_generation, selected_parent_indices, hypothesis_space, perspective_hyps)
+        avg_pt_success_per_gen += pt_success
+
+        comm_success = calc_communication_success(selected_hyps_per_generation, selected_parent_indices,
+                pragmatic_level, pragmatic_level, communication_type, ca_measure_type, n_interactions,
+                hypothesis_space, perspective_hyps, lexicon_hyps, perspective_prior_type,
+                perspective_prior_strength, lexicon_prior_type, lexicon_prior_constant,
+                learner_perspective, learning_types, learning_type_probs, sal_alpha, error, agent_type,
+                pop_size, n_meanings, n_signals, n_utterances)
+        avg_ca_success_per_gen += comm_success
+    # print('perspective-inference performance over generations:')
+    avg_pt_success_per_gen /= n_runs
+    # print('communication performance over generations:')
+    avg_ca_success_per_gen /= n_runs
+
+    print('plotting to {}'.format(os.path.join(out_dir_plots, 'success_over_gens.png')))
+    plot_success_over_gens(avg_pt_success_per_gen, avg_ca_success_per_gen, out_dir_plots,  'success_over_gens.png')
