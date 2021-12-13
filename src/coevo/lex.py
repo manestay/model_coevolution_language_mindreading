@@ -175,7 +175,10 @@ def calc_rec_probs(lexicon, error_prob):
     """
     rec_probs = np.zeros_like(lexicon)
     t_lexicon = lexicon.T
-    for s in range(len(t_lexicon)):
+    is_bilingual = 2*lexicon.shape[0] == lexicon.shape[1]
+
+    num_iters = len(t_lexicon) if not is_bilingual else len(t_lexicon) / 2
+    for s in range(num_iters):
         signal_column = t_lexicon[s]
         new_meaning_probs = np.zeros_like(signal_column)
         associated_meanings_indices = np.where(signal_column == 1.)[0]
@@ -185,8 +188,15 @@ def calc_rec_probs(lexicon, error_prob):
         if len(unassociated_meanings_indices) == 0:
             new_meaning_probs[associated_meanings_indices] += np.divide(error_prob, len(associated_meanings_indices))
         if len(unassociated_meanings_indices) == len(lexicon):
-            new_meaning_probs = [1. / len(lexicon) for x in range(len(lexicon))]
+            new_meaning_probs = np.array([1. / len(lexicon) for x in range(len(lexicon))])
+
+        if is_bilingual:
+            # 2 * n_meanings = n_signals
+            # for bilingualism
+            new_meaning_probs = np.repeat(new_meaning_probs / 2, 2)
         rec_probs[s] = new_meaning_probs
+    if is_bilingual:
+        return rec_probs.T
     return rec_probs
 
 

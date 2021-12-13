@@ -11,6 +11,7 @@ from hypspace import *
 from data import Data, FixedContextsData, SpeakerAnnotatedData, convert_dataset_to_signal_counts_per_context
 from lex import Lexicon
 from context import *
+from lib import normalize
 
 np.seterr(divide = 'ignore')
 
@@ -57,6 +58,29 @@ def create_speaker_order_iteration(population, selection_type, parent_probs, par
     return speaker_order
 
 
+def create_speaker_order_iteration_community(population, selection_type, parent_probs, parent_type, n_contexts, learner_community):
+    '''
+    Similar to `create_speaker_order_iteration()`, but each teacher has a chance to be chosen
+    based on the community interaction matrix
+    '''
+    parent_communities = population.communities_per_agent
+    interaction_probs = population.interaction_matrix[learner_community]
+    community_probs = np.array([interaction_probs[c] for c in parent_communities])
+    community_probs = normalize(community_probs)
+
+    if parent_type == 'sng_teacher' and selection_type == 'none':
+        speaker = np.random.choice(population.population, p=community_probs)
+        speaker_order = np.array([speaker for x in range(n_contexts)])
+    elif parent_type == 'multi_teacher' and selection_type == 'none':
+        speaker_order = np.random.choice(population.population, size=n_contexts, replace=True, p=community_probs)
+    elif parent_type == 'sng_teacher' and selection_type == 'p_taking' or selection_type == 'l_learning' or selection_type == 'ca_with_parent':
+        probs = normalize(parent_probs * community_probs)
+        speaker = np.random.choice(population.population, p=probs)
+        speaker_order = np.array([speaker for x in range(n_contexts)])
+    elif parent_type == 'multi_teacher' and selection_type == 'p_taking' or selection_type == 'l_learning' or selection_type == 'ca_with_parent':
+        probs = normalize(parent_probs * community_probs)
+        speaker_order = np.random.choice(population.population, size=n_contexts, replace=True, p=probs)
+    return speaker_order
 
 class Agent(object):
     """
@@ -856,14 +880,6 @@ class Agent(object):
 #         return log_posteriors_per_data_point_matrix
 
 
-
-
-
-
-
-
-
-
 class Population(object):
     """
     A Population object consists of a list of Agent objects
@@ -921,6 +937,7 @@ class Population(object):
         self.learning_type_probs = learning_type_probs
         self.learning_types_per_agent = []
         # self.lexicons = []
+
         self.population = self.create_pop()
 
     def create_pop(self):
@@ -947,7 +964,7 @@ class Population(object):
             if self.pragmatic_level == 'literal' or self.pragmatic_level == 'perspective-taking':
                 agent = Agent(self.perspective_hyps, self.lexicon_hyps, composite_log_priors_population, composite_log_priors_population, perspective, self.sal_alpha, lexicon, learning_type)
             elif self.pragmatic_level == 'prag':
-                agent = PragmaticAgent(self.perspective_hyps, self.lexicon_hyps, composite_log_priors_population, composite_log_priors_population, perspective, self.sal_alpha, lexicon, learning_type, self.pragmatic_level, self.pragmatic_level, self.optimality_alpha, self.extra_error)
+                agent = BilingualAgent(self.perspective_hyps, self.lexicon_hyps, composite_log_priors_population, composite_log_priors_population, perspective, self.sal_alpha, lexicon, learning_type, self.pragmatic_level, self.pragmatic_level, self.optimality_alpha, self.extra_error)
 
             agent.id = int(i)
             population.append(agent)
@@ -1967,3 +1984,196 @@ class Population(object):
 #             agent.id = i
 
 #         return selected_hyp_per_agent_matrix, avg_fitness, parent_probs, self.parent_index_per_learner, self.parent_lex_indices, normalized_log_posteriors_per_data_point_per_agent_matrix
+
+class BilingualPopulation(Population):
+    def __init__(self, size, n_meanings, n_signals, hypothesis_space, perspective_hyps,
+            lexicon_hyps, perspective_prior_type, perspective_prior_strength, lexicon_prior_type,
+            lexicon_prior_strength, perspectives, sal_alpha, lexicon_probs, production_error,
+            extra_error, pragmatic_level, optimality_alpha, n_contexts, context_type, context_generation,
+            context_size, helpful_contexts, n_utterances, learning_types, learning_type_probs,
+            communities, community_probs, interaction_matrix):
+        self.agent_type = 'bilingual'
+        self.communities = communities
+        self.community_probs = community_probs
+        self.interaction_matrix = interaction_matrix
+        super(BilingualPopulation, self).__init__(size, n_meanings, n_signals, hypothesis_space, perspective_hyps,
+            lexicon_hyps, perspective_prior_type, perspective_prior_strength, lexicon_prior_type,
+            lexicon_prior_strength, perspectives, sal_alpha, lexicon_probs, production_error,
+            extra_error, pragmatic_level, optimality_alpha, n_contexts, context_type, context_generation,
+            context_size, helpful_contexts, n_utterances, learning_types, learning_type_probs)
+
+        self.n_signals_total = self.n_signals * len(self.communities)
+
+    def assign_communities(self):
+        '''
+        assigns communities to each agent. Called each time we create a new generation
+        '''
+        communities = []
+        for prob, comm in zip(self.community_probs, self.communities):
+            communities.extend([comm] * int(prob*self.size))
+        np.random.shuffle(communities)
+        return communities
+
+    def create_pop(self):
+        """
+        Create the first generation.
+        :return: A list containing all the Agent objects in the population
+        """
+        np.random.seed(0)
+        self.perspective = 0 # flips between generations
+        population = []
+        pop_perspectives = np.array([self.perspective] * self.size)
+
+        self.perspectives_per_agent = pop_perspectives
+        pop_lex_indices = np.random.choice(np.arange(len(self.lexicon_hyps)), size=self.size, p=self.lexicon_probs)
+        self.lexicons_per_agent = np.array([self.lexicon_hyps[l] for l in pop_lex_indices])
+        self.learning_types_per_agent = np.random.choice(self.learning_types, size=self.size, p=self.learning_type_probs)
+        perspective_prior = prior.create_perspective_prior(self.perspective_hyps, self.lexicon_hyps, self.perspective_prior_type, self.perspective, self.perspective_prior_strength)
+        lexicon_prior = prior.create_lexicon_prior(self.lexicon_hyps, self.lexicon_prior_type, self.lexicon_prior_strength, self.error)
+        composite_log_priors_population = prior.list_composite_log_priors(self.agent_type, self.size, self.hypothesis_space, self.perspective_hyps, self.lexicon_hyps, perspective_prior, lexicon_prior) # The full set of composite priors on a LOG SCALE (1D numpy array)
+
+        self.communities_per_agent = self.assign_communities()
+
+        for i, curr_comm in enumerate(self.communities_per_agent):
+            perspective = pop_perspectives[i]
+            lexicon = Lexicon('specified_lexicon', self.n_meanings, self.n_signals, specified_lexicon=self.lexicons_per_agent[i])
+            learning_type = self.learning_types_per_agent[i]
+
+            agent = BilingualAgent(self.perspective_hyps, self.lexicon_hyps, composite_log_priors_population,
+                    composite_log_priors_population, perspective, self.sal_alpha, lexicon, learning_type,
+                    curr_comm, self.communities)
+            agent.id = int(i)
+            population.append(agent)
+        return population
+
+    def pop_update(self, context_generation, helpful_contexts, n_meanings, n_signals,
+                   error, selection_type, selection_weighting, communication_type,
+                   ca_measure_type, n_interactions, teacher_type, perspectives_per_agent=None,
+                   n_procs=1, seed=None):
+        if seed is not None:
+            np.random.seed(seed)
+        parent_fitness_array = self.calc_fitness(selection_type, selection_weighting, communication_type, ca_measure_type, n_interactions, self.parent_index_per_learner, self.parent_generation, self.parent_lex_indices)
+        avg_fitness = np.mean(parent_fitness_array)
+        if selection_weighting == 'none':
+            parent_probs = normalize(parent_fitness_array)
+        elif isinstance(selection_weighting, float):
+            parent_fitness_array_weighted = np.multiply(parent_fitness_array, selection_weighting)
+            parent_fitness_array_weighted_exp = np.exp(parent_fitness_array_weighted)
+            parent_probs = normalize(parent_fitness_array_weighted_exp)
+
+        n_agents_to_be_replaced = self.size
+
+        parent_communities = self.communities_per_agent
+        learner_communities = self.assign_communities()
+        # learner_probs_per_comm = []
+        # for comm in learner_communities:
+        #     np.random.choice(self.communities, size=1, p=self.interaction_matrix[comm])
+
+        data_per_agent = []
+        # 1.1) First we generate data_dict from the current population:
+        for i, learner_community in enumerate(learner_communities):
+            if self.context_generation == 'random':
+                context_matrix = gen_context_matrix(self.context_type, self.n_meanings, self.context_size, self.n_contexts)
+            elif self.context_generation == 'only_helpful':
+                context_matrix = gen_helpful_context_matrix(self.n_meanings, self.n_contexts, self.helpful_contexts)
+            elif self.context_generation == 'optimal':
+                context_matrix = gen_helpful_context_matrix_fixed_order(self.n_meanings, self.n_contexts, self.helpful_contexts)
+
+            speaker_order = create_speaker_order_iteration_community(self, selection_type, parent_probs, teacher_type, self.n_contexts, learner_community)
+            self.parent_index_per_learner[i] = speaker_order[0].id
+
+            if context_generation == 'random':
+                old_pop_data = self.produce_pop_data(context_matrix, self.n_utterances, speaker_order)
+            elif context_generation == 'optimal':
+                old_pop_data = self.produce_pop_data_fixed_contexts(context_matrix, self.n_utterances, speaker_order, helpful_contexts)
+            data_per_agent.append(old_pop_data)
+        self.parent_generation = self.population
+        self.parent_lex_indices = np.zeros(self.size)
+        for a in range(self.size):
+            parent_index = self.parent_index_per_learner[a]
+            self.parent_lex_indices[a] = self.lex_indices_per_agent[parent_index]
+
+        # now we work on the learner population
+        self.perspective = 1 - self.perspective
+
+        normalized_log_posteriors_per_agent_matrix = np.zeros((n_agents_to_be_replaced, len(self.hypothesis_space)))
+        if n_procs == 1:
+            pool = None
+            start = time.time()
+            for agent_idx in range(n_agents_to_be_replaced):
+                agent_data = data_per_agent[agent_idx]
+                import pdb; pdb.set_trace()
+                new_agent, log_posteriors, selected_hyp, lex_hyp = self.agent_update(agent_data, error)
+                #     print(self.parent_generation[0].perspective, new_agent.perspective)
+                normalized_log_posteriors_per_agent_matrix[agent_idx] = log_posteriors
+                selected_hyp_per_agent_matrix[agent_idx] = selected_hyp
+                self.lex_indices_per_agent[agent_idx] = lex_hyp
+
+                # 1.6) Then, we remove the oldest agent (c.e. agent with index 0) from the population, and append the new agent at the end:
+                self.population = np.delete(self.population, 0)
+                self.population = np.append(self.population, new_agent)  # Appends the new agent to the end of the population
+                self.perspectives_per_agent = np.delete(self.perspectives_per_agent, 0)
+                self.perspectives_per_agent = np.append(self.perspectives_per_agent, new_agent.perspective)
+                self.lexicons_per_agent = np.delete(self.lexicons_per_agent, 0, axis=0)
+                # self.lexicons_per_agent = np.append(self.lexicons_per_agent, new_agent.lexicon.lexicon, axis=0)
+                self.lexicons_per_agent = np.vstack((self.lexicons_per_agent, [new_agent.lexicon.lexicon]))
+                self.learning_types_per_agent = np.delete(self.learning_types_per_agent, 0)
+                self.learning_types_per_agent = np.append(self.learning_types_per_agent, new_agent.learning_type)
+            print(' | took {:.2f}s'.format(time.time()-start)),
+        import pdb; pdb.set_trace()
+
+    def produce_pop_data_fixed_contexts(self, context_matrix, n_utterances, speaker_order, helpful_contexts):
+        """
+        :param context_matrix: A 2D numpy matrix of contexts
+        :param n_utterances: Global variable determining the number of utterances produced per context (float)
+        :return: A data_dict object produced by the population, for which speakers have been chosen from the population with uniform probability
+        """
+        pop_topic_matrix = np.zeros((len(context_matrix), n_utterances)).astype(int)
+        signal_counts_per_context_matrix = np.zeros((len(helpful_contexts), self.n_signals_total)).astype(int)
+        for c in range(len(context_matrix)):
+            context_index = c % len(helpful_contexts)
+            context = context_matrix[c]
+            speaker = speaker_order[c]
+            speaker_data = speaker.produce_data(self.n_meanings, self.n_signals, np.array([context]), self.n_utterances, self.error, self.extra_error)
+            speaker_topics = speaker_data.topics[0]
+            speaker_utterances = speaker_data.utterances[0].astype(int)
+            pop_topic_matrix[c] = speaker_topics
+            signal_counts_per_context_matrix[context_index, speaker_utterances] += 1
+        pop_data = FixedContextsData(context_matrix, pop_topic_matrix, signal_counts_per_context_matrix, helpful_contexts)
+        return pop_data
+
+class BilingualAgent(Agent):
+    """
+    This is an agent that has the capacity to learn multiple signals for 1 meaning.
+    """
+
+    def __init__(self, perspective_hyps, lexicon_hyps, log_priors, log_posteriors, perspective,
+            alpha, lexicon, learning_type, community, communities):
+        """
+        This initializes the same as for the Agent superclass, with the only difference that an
+        extra attribute self.community is added
+        :param perspective_hyps:
+        :param lexicon_hyps:
+        :param log_priors:
+        :param log_posteriors:
+        :param perspective:
+        :param lexicon:
+        :param learning_type:
+        :param n_speakers:
+        :return:
+        """
+        super(BilingualAgent, self).__init__(perspective_hyps, lexicon_hyps, log_priors, log_posteriors,
+            perspective, alpha, lexicon, learning_type)
+        self.community = community
+        self.communities = communities
+        self.n_communities = len(communities)
+
+    def produce_signal(self, n_signals, topic, error):
+        """
+        :param n_signals: The number of signals
+        :param topic: The index of the topic meaning for which we want to produce a signal
+        :return: A signal for topic meaning, chosen probabilistically based on self.lexicon
+        """
+        signal_probs = self.calc_signal_probs(self.lexicon.lexicon, topic, error)
+        signal = np.random.choice(np.arange(n_signals * self.n_communities), 1, p=signal_probs)
+        return signal

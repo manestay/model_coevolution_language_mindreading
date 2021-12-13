@@ -68,7 +68,7 @@ def get_agent_type(run_type):
 
 
 def get_hypothesis_space(agent_type, perspective_hyps, lexicon_hyps, pop_size):
-    if agent_type == 'no_p_distinction':
+    if agent_type == 'no_p_distinction' or agent_type == 'multilingual':
         # The full space of composite hypotheses that the learner will consider (2D numpy matrix with composite hypotheses on the rows, perspective hypotheses on column 0 and lexicon hypotheses on column 1)
         hypothesis_space = hypspace.list_hypothesis_space(perspective_hyps, lexicon_hyps)
 
@@ -144,3 +144,6 @@ def get_hyp_inds(selected_hyp_per_agent_matrix, argsort_informativity_per_lexico
         hyp_ind = hyp_space[hyp][1]
         hyp_inds.append(list(argsort_informativity_per_lexicon).index(hyp_ind))
     return hyp_inds
+
+def normalize(v):
+    return np.true_divide(v, v.sum(axis=0,keepdims=1))
