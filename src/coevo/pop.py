@@ -1399,11 +1399,12 @@ class BilingualPopulation(Population):
             lexicon_prior_strength, perspectives, sal_alpha, lexicon_probs, production_error,
             extra_error, pragmatic_level, optimality_alpha, n_contexts, context_type, context_generation,
             context_size, helpful_contexts, n_utterances, learning_types, learning_type_probs,
-            communities, community_probs, interaction_matrix):
+            communities, community_probs, interaction_matrix, prestige=None):
         self.agent_type = 'bilingual'
         self.communities = communities
         self.community_probs = community_probs
         self.interaction_matrix = interaction_matrix
+        self.prestige = prestige
 
         if isinstance(lexicon_probs, dict):
             self.approach = 'top-down'
@@ -1448,7 +1449,7 @@ class BilingualPopulation(Population):
         if self.approach == 'bottom-up':
             lexicon_probs = self.lexicon_probs
             pop_lex_indices = np.random.choice(np.arange(len(self.lexicon_hyps)), size=self.size, p=lexicon_probs)
-        else:
+        else: # top-down
             pop_lex_indices = []
             for comm_name in self.communities_per_agent:
                 lexicon_probs = self.lexicon_probs[comm_name]
@@ -1466,7 +1467,7 @@ class BilingualPopulation(Population):
 
             agent = BilingualAgent(self.perspective_hyps, self.lexicon_hyps, composite_log_priors_population,
                     composite_log_priors_population, perspective, self.sal_alpha, lexicon, learning_type,
-                    curr_comm, self.communities)
+                    curr_comm, self.communities, self.prestige)
             agent.id = int(i)
             population.append(agent)
         return population
@@ -1613,7 +1614,7 @@ class BilingualPopulation(Population):
 
         new_agent = BilingualAgent(self.perspective_hyps, self.lexicon_hyps, composite_log_priors,
                 composite_log_priors, new_agent_perspective, self.sal_alpha, new_agent_lexicon,
-                new_agent_learning_type, community, self.communities)
+                new_agent_learning_type, community, self.communities, self.prestige)
         # 1.5) We subsequently let the new agent learn from the annotated_pop_data of the population and update its lexicon accordingly:
         log_posteriors = new_agent.inference_on_signal_counts_data(agent_data, error)
 
@@ -1660,7 +1661,7 @@ class BilingualAgent(Agent):
     """
 
     def __init__(self, perspective_hyps, lexicon_hyps, log_priors, log_posteriors, perspective,
-            alpha, lexicon, learning_type, community, communities):
+            alpha, lexicon, learning_type, community, communities, prestige=None):
         """
         This initializes the same as for the Agent superclass, with the only difference that an
         extra attribute self.community is added
@@ -1678,7 +1679,19 @@ class BilingualAgent(Agent):
             perspective, alpha, lexicon, learning_type)
         self.community = community
         self.communities = communities
+        self.prestige = prestige
         self.n_communities = len(communities)
+
+        if self.prestige:
+            other_prestige = 1 - self.prestige
+            prestige_probs = np.zeros(self.lexicon_hyps.shape[2])
+            if self.communities.index(self.community) == 0:
+                prestige_probs[0:2] = prestige
+                prestige_probs[2:4] = other_prestige
+            elif self.communities.index(self.community) == 1:
+                prestige_probs[2:4] = prestige
+                prestige_probs[0:2] = other_prestige
+            self.prestige_probs = normalize(prestige_probs)
 
     def produce_signal(self, n_signals, topic, error):
         """
@@ -1687,5 +1700,7 @@ class BilingualAgent(Agent):
         :return: A signal for topic meaning, chosen probabilistically based on self.lexicon
         """
         signal_probs = self.calc_signal_probs(self.lexicon.lexicon, topic, error)
+        if self.prestige:
+            signal_probs = normalize(signal_probs * self.prestige_probs)
         signal = np.random.choice(np.arange(n_signals * self.n_communities), 1, p=signal_probs)
         return signal

@@ -45,7 +45,7 @@ def run_iteration(n_meanings, n_signals, n_iterations, report_every_i, turnover_
         optimality_alpha, learning_types, learning_type_probs, hypothesis_space, perspective_hyps,
         lexicon_hyps, perspective_prior_type, perspective_prior_strength,
         lexicon_prior_type, lexicon_prior_constant, communities, community_probs,
-        interaction_matrix, lang_tups, print_pop=False, run_idx=0):
+        interaction_matrix, lang_tups, prestige, run_idx=0):
     run_selected_hyps_per_generation_matrix, run_avg_fitness_matrix, run_parent_probs_matrix, \
             run_selected_parent_indices_matrix, run_parent_lex_indices_matrix = [], [], [], [], []
     communities_per_agent_matrix = []
@@ -67,12 +67,9 @@ def run_iteration(n_meanings, n_signals, n_iterations, report_every_i, turnover_
             lexicon_prior_constant, perspectives, sal_alpha, lexicon_probs, error,
             extra_error, pragmatic_level, optimality_alpha, n_contexts, context_type, context_generation,
             context_size, helpful_contexts, n_utterances, learning_types, learning_type_probs,
-            communities, community_probs, interaction_matrix)
+            communities, community_probs, interaction_matrix, prestige)
     communities_per_agent_matrix.append(population.communities_per_agent)
 
-    # if print_pop:
-    #     print('initial population for run 0 is: {}')
-    #     population.print_population()=
 
     for i in range(n_iterations):
         parent_perspective = population.perspective
@@ -164,6 +161,10 @@ if __name__ == "__main__":
         interaction_matrix = config.get('community', 'interaction_matrix').split(' ')
         interaction_matrix = np.reshape([float(x) for x in interaction_matrix], (2,2))
         interaction_matrix = {comm: interaction_matrix[i] for i, comm in enumerate(communities)}
+        try:
+            prestige = config.getfloat('community', 'prestige')
+        except (ConfigParser.NoOptionError, ValueError):
+            prestige = None
 
         context_generation = config.get('context', 'context_generation')
         context_type = config.get('context', 'context_type')
@@ -293,70 +294,6 @@ if __name__ == "__main__":
     minimum_informativity_all = np.amin(informativity_per_lexicon_all)
     min_max_info_all = (minimum_informativity_all, maximum_informativity_all)
 
-    ###
-    # CATEGORISING LEXICONS BY INFORMATIVENESS BELOW
-    # for language A:
-
-    # informativity_per_lexicon1 = lex.calc_ca_all_lexicons(lexicon_hyps_all[:, :, 0:2], error, lex_measure)
-    # import pdb; pdb.set_trace()
-
-    # argsort_informativity_per_lexicon1 = np.argsort(informativity_per_lexicon1)
-
-    # informativity_per_lexicon_sorted1 = np.round(informativity_per_lexicon1[argsort_informativity_per_lexicon1], decimals=2)
-
-    # unique_informativity_per_lexicon1 = np.unique(informativity_per_lexicon_sorted1)
-
-    # minimum_informativity1 = np.amin(informativity_per_lexicon_sorted1)
-
-    # min_info_indices1 = np.argwhere(informativity_per_lexicon_sorted1==minimum_informativity1)
-
-    # maximum_informativity1 = np.amax(informativity_per_lexicon_sorted1)
-
-    # max_info_indices1 = np.argwhere(informativity_per_lexicon_sorted1==maximum_informativity1)
-
-    # intermediate_info_indices1 = np.arange(min_info_indices1[-1]+1, max_info_indices1[0])
-
-    # lexicon_hyps_all_sorted1 = lexicon_hyps_all[argsort_informativity_per_lexicon1]
-    # # language B:
-    # informativity_per_lexicon2 = lex.calc_ca_all_lexicons(lexicon_hyps_all[:, :, 2:4], error, lex_measure)
-
-    # argsort_informativity_per_lexicon2 = np.argsort(informativity_per_lexicon2)
-
-    # informativity_per_lexicon_sorted2 = np.round(informativity_per_lexicon2[argsort_informativity_per_lexicon2], decimals=2)
-
-    # unique_informativity_per_lexicon2 = np.unique(informativity_per_lexicon_sorted2)
-
-    # minimum_informativity2 = np.amin(informativity_per_lexicon_sorted2)
-
-    # min_info_indices2 = np.argwhere(informativity_per_lexicon_sorted2==minimum_informativity2)
-
-    # maximum_informativity2 = np.amax(informativity_per_lexicon_sorted2)
-
-    # max_info_indices2 = np.argwhere(informativity_per_lexicon_sorted2==maximum_informativity2)
-
-    # intermediate_info_indices2 = np.arange(min_info_indices2[-1]+1, max_info_indices2[0])
-
-    # lexicon_hyps_all_sorted2 = lexicon_hyps_all[argsort_informativity_per_lexicon2]
-    # # overall
-    # informativity_per_lexicon_all = informativity_per_lexicon1 + informativity_per_lexicon2
-
-    # argsort_informativity_per_lexicon_all = np.argsort(informativity_per_lexicon_all)
-
-    # informativity_per_lexicon_sorted_all = np.round(informativity_per_lexicon_all[argsort_informativity_per_lexicon_all], decimals=2)
-
-    # unique_informativity_per_lexicon_all = np.unique(informativity_per_lexicon_sorted_all)
-
-    # minimum_informativity_all = np.amin(informativity_per_lexicon_sorted_all)
-
-    # min_info_indices_all = np.argwhere(informativity_per_lexicon_sorted_all==minimum_informativity_all)
-
-    # maximum_informativity_all = np.amax(informativity_per_lexicon_sorted_all)
-
-    # max_info_indices_all = np.argwhere(informativity_per_lexicon_sorted_all==maximum_informativity_all)
-
-    # intermediate_info_indices_all = np.arange(min_info_indices_all[-1]+1, max_info_indices_all[0])
-
-    # lexicon_hyps_all_sorted_all = lexicon_hyps_all[argsort_informativity_per_lexicon_all]
 
     lang_tups = (
         ('langA', informativity_dictA, min_max_infoA),
@@ -382,7 +319,7 @@ if __name__ == "__main__":
                 error, extra_error, pragmatic_level, optimality_alpha, learning_types, learning_type_probs,
                 hypothesis_space, perspective_hyps, lexicon_hyps_all, perspective_prior_type,
                 perspective_prior_strength, lexicon_prior_type, lexicon_prior_constant,
-                communities, community_probs, interaction_matrix, lang_tups, print_pop=(r==0), run_idx=r)
+                communities, community_probs, interaction_matrix, lang_tups, prestige=prestige, run_idx=r)
             run_time_mins = (time.time()-t0)/60.
             run_times_all.append(run_time_mins)
             print('run took {:.2f}min'.format(run_time_mins))
