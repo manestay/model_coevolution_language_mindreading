@@ -1,3 +1,11 @@
+"""
+In the top down approach, we suppose that that each community A and community B are associated with
+n signals each (with n meanings in the context). Each learner has a (n x 2n) lexicon hypothesis space,
+which is initialized to fully ambiguous for their own (n x n) subset. In the isolation setting, we
+expect them to learn only the n x n lexicon of their community. With interaction, we expect them to
+learn the (n)x(2n) lexicon.
+"""
+
 import argparse
 from collections import OrderedDict
 import ConfigParser
@@ -17,7 +25,7 @@ import plots
 import pop
 import prior
 from lib import get_helpful_contexts, get_lexicon_hyps, get_hypothesis_space, read_config, \
-                get_hyp_inds
+                get_hyp_inds, get_lexicon_probs_ambig
 from plot_lib import calc_lex_hyp_proportions, calc_p_taking_success, calc_communication_success, \
                      plot_informativeness_over_gens, plot_success_over_gens
 
@@ -33,13 +41,14 @@ parser.add_argument("-po", "--plot-only", action="store_true", help="load and pl
 def run_iteration(n_meanings, n_signals, n_iterations, report_every_i, turnover_type, selection_type,
         selection_weighting, communication_type, ca_measure_type, n_interactions, n_contexts, n_utterances,
         context_generation, context_type, context_size, helpful_contexts, pop_size, teacher_type,
-        perspectives, perspective_probs, sal_alpha, lexicon_probs, error, extra_error, pragmatic_level,
+        perspectives, sal_alpha, lexicon_probs, error, extra_error, pragmatic_level,
         optimality_alpha, learning_types, learning_type_probs, hypothesis_space, perspective_hyps,
         lexicon_hyps, perspective_prior_type, perspective_prior_strength,
-        lexicon_prior_type, lexicon_prior_constant, recording, communities, community_probs,
-        interaction_matrix, print_pop=False, run_idx=0):
+        lexicon_prior_type, lexicon_prior_constant, communities, community_probs,
+        interaction_matrix, lang_tups, print_pop=False, run_idx=0):
     run_selected_hyps_per_generation_matrix, run_avg_fitness_matrix, run_parent_probs_matrix, \
             run_selected_parent_indices_matrix, run_parent_lex_indices_matrix = [], [], [], [], []
+    communities_per_agent_matrix = []
     if multithread and turnover_type == 'chain':
         print('cannot multithread with `turnover_type` == "chain", only using 1 process')
         n_procs = 1
@@ -59,41 +68,59 @@ def run_iteration(n_meanings, n_signals, n_iterations, report_every_i, turnover_
             extra_error, pragmatic_level, optimality_alpha, n_contexts, context_type, context_generation,
             context_size, helpful_contexts, n_utterances, learning_types, learning_type_probs,
             communities, community_probs, interaction_matrix)
+    communities_per_agent_matrix.append(population.communities_per_agent)
 
-    if print_pop:
-        print('initial population for run 0 is: {}')
-        population.print_population()
+    # if print_pop:
+    #     print('initial population for run 0 is: {}')
+    #     population.print_population()=
 
     for i in range(n_iterations):
         parent_perspective = population.perspective
         random_seed = run_idx * 1000 + i
         if i == 0 or i % report_every_i == 0:
             print('iteration = {}'.format(i)),
+        np.random.seed(random_seed)
+
         selected_hyp_per_agent_matrix, avg_fitness, parent_probs, selected_parent_indices, \
-        parent_lex_indices, log_posteriors = population.pop_update(
+        parent_lex_indices, communities_per_agent = population.pop_update(
             context_generation, helpful_contexts, n_meanings, n_signals, error,
             selection_type, selection_weighting, communication_type, ca_measure_type, n_interactions,
-            teacher_type, perspectives_per_agent=None, n_procs=n_procs, seed=random_seed)
+            teacher_type, perspectives_per_agent=None, n_procs=n_procs)
 
         run_selected_hyps_per_generation_matrix.append(selected_hyp_per_agent_matrix)
         run_avg_fitness_matrix.append(avg_fitness)
         run_parent_probs_matrix.append(parent_probs)
         run_selected_parent_indices_matrix.append(selected_parent_indices)
         run_parent_lex_indices_matrix.append(parent_lex_indices)
+        communities_per_agent_matrix.append(communities_per_agent)
 
+        # community indices
+        commA_inds = np.where(communities_per_agent == 'commA')
+        commB_inds = np.where(communities_per_agent == 'commB')
+
+
+        # calculate proportions per language
         hyp_space = population.hypothesis_space
-        hyp_inds = get_hyp_inds(selected_hyp_per_agent_matrix, argsort_informativity_per_lexicon, hyp_space)
+        print()
+        for comm_name, comm_inds in (('commA', commA_inds), ('commB', commB_inds)):
+            fst = []
+            print(comm_name)
+            selected_hyps_comm = selected_hyp_per_agent_matrix[comm_inds]
+            for lang_name, info_dict, min_max_info in lang_tups:
+                hyp_inds = get_hyp_inds(selected_hyps_comm, hyp_space)
+                persp_hyps = []
+                for hyp in selected_hyps_comm:
+                    persp_hyps.append(hyp_space[hyp][0])
+                persp_prop = persp_hyps.count(parent_perspective) / float(len(persp_hyps))
+                print('{} | persp: {}'.format(lang_name.ljust(5), persp_prop)),
 
-        persp_hyps = []
-        for hyp in selected_hyp_per_agent_matrix:
-            persp_hyps.append(hyp_space[hyp][0])
-            print(hyp_space[hyp])
-        persp_prop = persp_hyps.count(parent_perspective) / float(len(persp_hyps))
-        print(' | persp prop is {}'.format(persp_prop)),
-        props = calc_lex_hyp_proportions(hyp_inds, min_info_indices, intermediate_info_indices, max_info_indices)
-        print(' | lex props are {}'.format(props))
+                lex_props = calc_lex_hyp_proportions(hyp_inds, info_dict, min_max_info)
+                print(' | lex: {}'.format(lex_props))
+                fst.append(lex_props[0])
+        # import pdb; pdb.set_trace()
 
-    return run_selected_hyps_per_generation_matrix, run_avg_fitness_matrix, run_parent_probs_matrix, run_selected_parent_indices_matrix, run_parent_lex_indices_matrix
+    return run_selected_hyps_per_generation_matrix, run_avg_fitness_matrix, run_parent_probs_matrix, \
+        run_selected_parent_indices_matrix, run_parent_lex_indices_matrix, communities_per_agent_matrix
 
 
 
@@ -131,12 +158,12 @@ if __name__ == "__main__":
         n_iterations = config.getint('lexicon', 'n_iterations')
         n_runs = config.getint('lexicon', 'n_runs')
 
-        communities = config.get('community', 'communities')
-        communities = [int(x) for x in communities.split(' ')]
+        communities = config.get('community', 'communities').split(' ')
         community_probs = config.get('community', 'community_probs')
         community_probs = [float(x) for x in community_probs.split(' ')]
         interaction_matrix = config.get('community', 'interaction_matrix').split(' ')
-        interaction_matrix = np.reshape([int(x) for x in interaction_matrix], (2,2))
+        interaction_matrix = np.reshape([float(x) for x in interaction_matrix], (2,2))
+        interaction_matrix = {comm: interaction_matrix[i] for i, comm in enumerate(communities)}
 
         context_generation = config.get('context', 'context_generation')
         context_type = config.get('context', 'context_type')
@@ -157,8 +184,6 @@ if __name__ == "__main__":
 
         perspectives = config.get('pop_makeup', 'perspectives')
         perspectives = [int(x) for x in perspectives.split(' ')]
-        perspective_probs = config.get('pop_makeup', 'perspective_probs')
-        perspective_probs = [float(x) for x in perspective_probs.split(' ')]
         learning_types = config.get('pop_makeup', 'learning_types')
         learning_types = learning_types.split(' ')
         learning_type_probs = config.get('pop_makeup', 'learning_type_probs')
@@ -185,7 +210,6 @@ if __name__ == "__main__":
         report_every_i = config.getint('simulation', 'report_every_i')
         cut_off_point = config.getint('simulation', 'cut_off_point')
         report_every_r = config.getint('simulation', 'report_every_r')
-        recording = config.get('simulation', 'recording')
         which_hyps_on_graph = config.get('simulation', 'which_hyps_on_graph')
         lex_measure = config.get('simulation', 'lex_measure')
         posterior_threshold = config.getfloat('simulation', 'posterior_threshold')
@@ -197,6 +221,8 @@ if __name__ == "__main__":
     helpful_contexts = get_helpful_contexts(n_meanings)
     lexicon_hyps = get_lexicon_hyps(which_lexicon_hyps, n_meanings, n_signals)
 
+    # for bottom-up, we add the [[0,0],[0,0]] case
+    lexicon_hyps = np.vstack((np.zeros((1,n_meanings,n_signals)), lexicon_hyps))
     # grow lexicon hyp space by num communities
     # TODO: currently only works for 2 communities
     if len(communities) == 2:
@@ -204,16 +230,31 @@ if __name__ == "__main__":
         for lexicon in lexicon_hyps:
             for lexicon2 in lexicon_hyps:
                 lexicon_ext = np.hstack((lexicon,lexicon2))
+                if lexicon_ext.sum() == 0:
+                    continue
                 lexicon_hyps_all.append(lexicon_ext)
         lexicon_hyps_all = np.array(lexicon_hyps_all)
     else:
         print('only size 2 communities supported')
         sys.exit(-1)
 
+
     hypothesis_space = get_hypothesis_space(agent_type, perspective_hyps, lexicon_hyps_all, pop_size)
 
-    lexicon_probs = np.array([0. for x in range(len(lexicon_hyps_all)-1)]+[1.])
+    lh_shape = lexicon_hyps_all.shape
+    lexicon_hyps_all_flat = lexicon_hyps_all.reshape(lh_shape[0], lh_shape[1] * lh_shape[2])
 
+    commA_mat = np.hstack((np.ones((n_meanings, n_signals)), np.zeros((n_meanings,n_signals))))
+    ind_commA_ambig = np.where((lexicon_hyps_all_flat == commA_mat.flatten()).all(axis=1))
+    lexicon_probs_commA = np.zeros(lexicon_hyps_all.shape[0])
+    lexicon_probs_commA[ind_commA_ambig] = 1
+
+    commB_mat = np.hstack((np.zeros((n_meanings, n_signals)), np.ones((n_meanings,n_signals))))
+    ind_commB_ambig = np.where((lexicon_hyps_all_flat == commB_mat.flatten()).all(axis=1))
+    lexicon_probs_commB = np.zeros(lexicon_hyps_all.shape[0])
+    lexicon_probs_commB[ind_commB_ambig] = 1
+    lexicon_probs = {'commA': lexicon_probs_commA, 'commB': lexicon_probs_commB}
+    # lexicon_probs = np.array([0. for x in range(len(lexicon_hyps_all)-1)]+[1.])
     ###
     out_dirname = os.path.join(root_path, run_type_dir, args.run_name)
     out_dir_pickle = os.path.join(out_dirname, 'pickles')
@@ -233,74 +274,94 @@ if __name__ == "__main__":
         with open(os.path.join(out_dirname, 'params.json'), 'w') as f:
             json.dump(config_d, f, indent=2)
 
+    inds = np.arange(lexicon_hyps_all.shape[0])
+    informativity_per_lexiconA = lex.calc_ca_all_lexicons(lexicon_hyps_all[:, :, 0:n_meanings], error, lex_measure)
+    informativity_dictA = dict(zip(inds, informativity_per_lexiconA))
+    maximum_informativityA = np.amax(informativity_per_lexiconA)
+    minimum_informativityA = np.amin(informativity_per_lexiconA)
+    min_max_infoA = (minimum_informativityA, maximum_informativityA)
 
+    informativity_per_lexiconB = lex.calc_ca_all_lexicons(lexicon_hyps_all[:, :, n_meanings:], error, lex_measure)
+    informativity_dictB = dict(zip(inds, informativity_per_lexiconB))
+    maximum_informativityB = np.amax(informativity_per_lexiconB)
+    minimum_informativityB = np.amin(informativity_per_lexiconB)
+    min_max_infoB = (minimum_informativityB, maximum_informativityB)
+
+    informativity_per_lexicon_all = informativity_per_lexiconA + informativity_per_lexiconB
+    informativity_dict_all = dict(zip(inds, informativity_per_lexicon_all))
+    maximum_informativity_all = np.amax(informativity_per_lexicon_all)
+    minimum_informativity_all = np.amin(informativity_per_lexicon_all)
+    min_max_info_all = (minimum_informativity_all, maximum_informativity_all)
 
     ###
     # CATEGORISING LEXICONS BY INFORMATIVENESS BELOW
-    # for language 1:
+    # for language A:
 
-    informativity_per_lexicon1 = lex.calc_ca_all_lexicons(lexicon_hyps_all[:, :, 0:2], error, lex_measure)
+    # informativity_per_lexicon1 = lex.calc_ca_all_lexicons(lexicon_hyps_all[:, :, 0:2], error, lex_measure)
+    # import pdb; pdb.set_trace()
 
-    argsort_informativity_per_lexicon1 = np.argsort(informativity_per_lexicon1)
+    # argsort_informativity_per_lexicon1 = np.argsort(informativity_per_lexicon1)
 
-    informativity_per_lexicon_sorted1 = np.round(informativity_per_lexicon1[argsort_informativity_per_lexicon1], decimals=2)
+    # informativity_per_lexicon_sorted1 = np.round(informativity_per_lexicon1[argsort_informativity_per_lexicon1], decimals=2)
 
-    unique_informativity_per_lexicon1 = np.unique(informativity_per_lexicon_sorted1)
+    # unique_informativity_per_lexicon1 = np.unique(informativity_per_lexicon_sorted1)
 
-    minimum_informativity1 = np.amin(informativity_per_lexicon_sorted1)
+    # minimum_informativity1 = np.amin(informativity_per_lexicon_sorted1)
 
-    min_info_indices1 = np.argwhere(informativity_per_lexicon_sorted1==minimum_informativity1)
+    # min_info_indices1 = np.argwhere(informativity_per_lexicon_sorted1==minimum_informativity1)
 
-    maximum_informativity1 = np.amax(informativity_per_lexicon_sorted1)
+    # maximum_informativity1 = np.amax(informativity_per_lexicon_sorted1)
 
-    max_info_indices1 = np.argwhere(informativity_per_lexicon_sorted1==maximum_informativity1)
+    # max_info_indices1 = np.argwhere(informativity_per_lexicon_sorted1==maximum_informativity1)
 
-    intermediate_info_indices1 = np.arange(min_info_indices1[-1]+1, max_info_indices1[0])
+    # intermediate_info_indices1 = np.arange(min_info_indices1[-1]+1, max_info_indices1[0])
 
-    lexicon_hyps_all_sorted1 = lexicon_hyps_all[argsort_informativity_per_lexicon1]
+    # lexicon_hyps_all_sorted1 = lexicon_hyps_all[argsort_informativity_per_lexicon1]
+    # # language B:
+    # informativity_per_lexicon2 = lex.calc_ca_all_lexicons(lexicon_hyps_all[:, :, 2:4], error, lex_measure)
 
-    # language 2:
-    informativity_per_lexicon2 = lex.calc_ca_all_lexicons(lexicon_hyps_all[:, :, 2:4], error, lex_measure)
+    # argsort_informativity_per_lexicon2 = np.argsort(informativity_per_lexicon2)
 
-    argsort_informativity_per_lexicon2 = np.argsort(informativity_per_lexicon2)
+    # informativity_per_lexicon_sorted2 = np.round(informativity_per_lexicon2[argsort_informativity_per_lexicon2], decimals=2)
 
-    informativity_per_lexicon_sorted2 = np.round(informativity_per_lexicon2[argsort_informativity_per_lexicon2], decimals=2)
+    # unique_informativity_per_lexicon2 = np.unique(informativity_per_lexicon_sorted2)
 
-    unique_informativity_per_lexicon2 = np.unique(informativity_per_lexicon_sorted2)
+    # minimum_informativity2 = np.amin(informativity_per_lexicon_sorted2)
 
-    minimum_informativity2 = np.amin(informativity_per_lexicon_sorted2)
+    # min_info_indices2 = np.argwhere(informativity_per_lexicon_sorted2==minimum_informativity2)
 
-    min_info_indices2 = np.argwhere(informativity_per_lexicon_sorted2==minimum_informativity2)
+    # maximum_informativity2 = np.amax(informativity_per_lexicon_sorted2)
 
-    maximum_informativity2 = np.amax(informativity_per_lexicon_sorted2)
+    # max_info_indices2 = np.argwhere(informativity_per_lexicon_sorted2==maximum_informativity2)
 
-    max_info_indices2 = np.argwhere(informativity_per_lexicon_sorted2==maximum_informativity2)
+    # intermediate_info_indices2 = np.arange(min_info_indices2[-1]+1, max_info_indices2[0])
 
-    intermediate_info_indices2 = np.arange(min_info_indices2[-1]+1, max_info_indices2[0])
+    # lexicon_hyps_all_sorted2 = lexicon_hyps_all[argsort_informativity_per_lexicon2]
+    # # overall
+    # informativity_per_lexicon_all = informativity_per_lexicon1 + informativity_per_lexicon2
 
-    lexicon_hyps_all_sorted2 = lexicon_hyps_all[argsort_informativity_per_lexicon2]
+    # argsort_informativity_per_lexicon_all = np.argsort(informativity_per_lexicon_all)
 
+    # informativity_per_lexicon_sorted_all = np.round(informativity_per_lexicon_all[argsort_informativity_per_lexicon_all], decimals=2)
 
-    # overall
-    informativity_per_lexicon_all = informativity_per_lexicon1 + informativity_per_lexicon2
+    # unique_informativity_per_lexicon_all = np.unique(informativity_per_lexicon_sorted_all)
 
-    argsort_informativity_per_lexicon_all = np.argsort(informativity_per_lexicon_all)
+    # minimum_informativity_all = np.amin(informativity_per_lexicon_sorted_all)
 
-    informativity_per_lexicon_sorted_all = np.round(informativity_per_lexicon_all[argsort_informativity_per_lexicon_all], decimals=2)
+    # min_info_indices_all = np.argwhere(informativity_per_lexicon_sorted_all==minimum_informativity_all)
 
-    unique_informativity_per_lexicon_all = np.unique(informativity_per_lexicon_sorted_all)
+    # maximum_informativity_all = np.amax(informativity_per_lexicon_sorted_all)
 
-    minimum_informativity_all = np.amin(informativity_per_lexicon_sorted_all)
+    # max_info_indices_all = np.argwhere(informativity_per_lexicon_sorted_all==maximum_informativity_all)
 
-    min_info_indices_all = np.argwhere(informativity_per_lexicon_sorted_all==minimum_informativity_all)
+    # intermediate_info_indices_all = np.arange(min_info_indices_all[-1]+1, max_info_indices_all[0])
 
-    maximum_informativity_all = np.amax(informativity_per_lexicon_sorted_all)
+    # lexicon_hyps_all_sorted_all = lexicon_hyps_all[argsort_informativity_per_lexicon_all]
 
-    max_info_indices_all = np.argwhere(informativity_per_lexicon_sorted_all==maximum_informativity_all)
-
-    intermediate_info_indices_all = np.arange(min_info_indices_all[-1]+1, max_info_indices_all[0])
-
-    lexicon_hyps_all_sorted_all = lexicon_hyps_all[argsort_informativity_per_lexicon_all]
+    lang_tups = (
+        ('langA', informativity_dictA, min_max_infoA),
+        ('langB', informativity_dictB, min_max_infoB),
+        ('all', informativity_dict_all, min_max_info_all),)
 
     pickle_file_title_all_results = os.path.join(out_dir_pickle, 'results.p')
 
@@ -317,11 +378,11 @@ if __name__ == "__main__":
             result_tup = run_iteration(n_meanings, n_signals, n_iterations, report_every_i, turnover_type,
                 selection_type, selection_weighting, communication_type, ca_measure_type, n_interactions,
                 n_contexts, n_utterances, context_generation, context_type, context_size, helpful_contexts,
-                pop_size, teacher_type, perspectives, perspective_probs, sal_alpha, lexicon_probs,
+                pop_size, teacher_type, perspectives, sal_alpha, lexicon_probs,
                 error, extra_error, pragmatic_level, optimality_alpha, learning_types, learning_type_probs,
                 hypothesis_space, perspective_hyps, lexicon_hyps_all, perspective_prior_type,
-                perspective_prior_strength, lexicon_prior_type, lexicon_prior_constant, recording,
-                communities, community_probs, interaction_matrix, print_pop=(r==0), run_idx=r)
+                perspective_prior_strength, lexicon_prior_type, lexicon_prior_constant,
+                communities, community_probs, interaction_matrix, lang_tups, print_pop=(r==0), run_idx=r)
             run_time_mins = (time.time()-t0)/60.
             run_times_all.append(run_time_mins)
             print('run took {:.2f}min'.format(run_time_mins))
@@ -333,13 +394,15 @@ if __name__ == "__main__":
         parent_probs_matrix = np.array([x[2] for x in results])
         selected_parent_indices_matrix = np.array([x[3] for x in results])
         parent_lex_indices_matrix = np.array([x[4] for x in results])
+        communities_per_agent_matrix = np.array([x[5] for x in results])
 
         all_results_dict = {'selected_hyps_per_generation_matrix': selected_hyps_per_generation_matrix,
                         'avg_fitness_matrix': avg_fitness_matrix,
                         'parent_probs_matrix': parent_probs_matrix,
                         'selected_parent_indices_matrix': selected_parent_indices_matrix,
                         'parent_lex_indices_matrix': parent_lex_indices_matrix,
-                        'run_time_mins':run_times_all}
+                        'run_time_mins': run_times_all,
+                        'communities_per_agent_matrix': communities_per_agent_matrix}
 
         run_time_all_mins = (time.time()-start_all_runs)/60.
         print('all runs took {:.2f}min total'.format(run_time_all_mins))
@@ -354,6 +417,7 @@ if __name__ == "__main__":
         selected_parent_indices_matrix = all_results_dict['selected_parent_indices_matrix']
         parent_lex_indices_matrix = all_results_dict['parent_lex_indices_matrix']
         run_times_all = all_results_dict['run_time_mins']
+        communities_per_agent_matrix = all_results_dict['communities_per_agent_matrix']
 
     #####
     # post processing stuff
@@ -380,34 +444,38 @@ if __name__ == "__main__":
     ######
     # statistics for plotting
 
-    # dimensions are (run_idx x iteration x agent)
-    selected_hyps_new_lex_order_all_runs = []
-    proportions = []
-    for run in selected_hyps_per_generation_matrix:
-        selected_hyps_new_lex_order_all_runs.append([])
-        proportions.append([])
-        for row in run:
-            hyp_inds = get_hyp_inds(row, argsort_informativity_per_lexicon, hypothesis_space)
-            selected_hyps_new_lex_order_all_runs[-1].append(hyp_inds)
-            props = calc_lex_hyp_proportions(hyp_inds, min_info_indices, intermediate_info_indices, max_info_indices)
-            proportions[-1].append(props)
-    selected_hyps_new_lex_order_all_runs = np.array(selected_hyps_new_lex_order_all_runs)
-    proportions = np.array(proportions)
 
-    # hypothesis_count_proportions, yerr_scaled_selected_hyps_for_plot = calc_mean_and_conf_invs_distribution(n_runs, 1, lexicon_hyps, which_hyps_on_graph, min_info_indices, intermediate_info_indices, max_info_indices, n_iterations, cut_off_point, selected_hyps_new_lex_order_all_runs)
 
-    # print("hypothesis_count_proportions are: {}".format(hypothesis_count_proportions))
-    # print("yerr_scaled_selected_hyps_for_plot is: {}".format(yerr_scaled_selected_hyps_for_plot))
+    # dict for each community (A, B, all) to matrix of dimension (run_idx x iteration x agent)
+    selected_hyps_new_lex_order_all_runs = {'commA': {}, 'commB': {}, 'all': {}}
+    proportions = {'commA': {}, 'commB': {}, 'all': {}}
+    for run, run_comms in zip(selected_hyps_per_generation_matrix, communities_per_agent_matrix):
+        # selected_hyps_new_lex_order_all_runs.append([])
+        # proportions.append([])
 
-    #####
-    # do plotting
+        for row, comms_per_agent in zip(run, run_comms):
+            commA_inds = np.where(comms_per_agent == 'A')[0]
+            commB_inds = np.where(comms_per_agent == 'B')[0]
 
-    # plots.plot_lex_distribution(out_dir_plots, 'inform_.png', plot_title, hypothesis_count_proportions, yerr_scaled_selected_hyps_for_plot, cut_off_point, text_size=1.6)
-    print('plotting to {}'.format(os.path.join(out_dir_plots, 'lex_dist_over_gens.png')))
-    plot_informativeness_over_gens(proportions, out_dir_plots, 'lex_dist_over_gens.png')
+            for comm_name, comm_inds in (('commA', commA_inds), ('commB', commB_inds),
+                                         ('all', np.arange(len(comms_per_agent))) ):
+                hyps_d = selected_hyps_new_lex_order_all_runs[comm_name]
+                props_d = proportions[comm_name]
+                for lang_name, sorted_info, min_inds, inter_inds, max_inds in lang_tups:
+                    hyp_inds = get_hyp_inds(row, hypothesis_space, sorted_info)
+                    selected_hyps_new_lex_order_all_runs[-1].append(hyp_inds)
+                    props = calc_lex_hyp_proportions(hyp_inds, min_inds, inter_inds, max_inds)
+                    proportions[-1].append(props)
+        selected_hyps_new_lex_order_all_runs = np.array(selected_hyps_new_lex_order_all_runs)
+        proportions = np.array(proportions)
+
+        out_name = 'lex_dist_over_gens_{}.png'.format(lang_name)
+        print('plotting to {}'.format(os.path.join(out_dir_plots, out_name)))
+        plot_informativeness_over_gens(proportions, out_dir_plots, out_name)
 
     avg_pt_success_per_gen = np.zeros(n_iterations)
     avg_ca_success_per_gen = np.zeros(n_iterations)
+
     np.random.seed(0)
     for selected_hyps_per_generation, selected_parent_indices in \
             zip(selected_hyps_per_generation_matrix, selected_parent_indices_matrix):

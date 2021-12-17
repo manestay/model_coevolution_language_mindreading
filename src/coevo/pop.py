@@ -65,7 +65,8 @@ def create_speaker_order_iteration_community(population, selection_type, parent_
     '''
     parent_communities = population.communities_per_agent
     interaction_probs = population.interaction_matrix[learner_community]
-    community_probs = np.array([interaction_probs[c] for c in parent_communities])
+    pc_inds = [population.communities.index(x) for x in parent_communities]
+    community_probs = np.array([interaction_probs[c] for c in pc_inds])
     community_probs = normalize(community_probs)
 
     if parent_type == 'sng_teacher' and selection_type == 'none':
@@ -73,13 +74,14 @@ def create_speaker_order_iteration_community(population, selection_type, parent_
         speaker_order = np.array([speaker for x in range(n_contexts)])
     elif parent_type == 'multi_teacher' and selection_type == 'none':
         speaker_order = np.random.choice(population.population, size=n_contexts, replace=True, p=community_probs)
-    elif parent_type == 'sng_teacher' and selection_type == 'p_taking' or selection_type == 'l_learning' or selection_type == 'ca_with_parent':
+    elif parent_type == 'sng_teacher' and (selection_type == 'p_taking' or selection_type == 'l_learning' or selection_type == 'ca_with_parent'):
         probs = normalize(parent_probs * community_probs)
         speaker = np.random.choice(population.population, p=probs)
         speaker_order = np.array([speaker for x in range(n_contexts)])
-    elif parent_type == 'multi_teacher' and selection_type == 'p_taking' or selection_type == 'l_learning' or selection_type == 'ca_with_parent':
+    elif parent_type == 'multi_teacher' and (selection_type == 'p_taking' or selection_type == 'l_learning' or selection_type == 'ca_with_parent'):
         probs = normalize(parent_probs * community_probs)
-        speaker_order = np.random.choice(population.population, size=n_contexts, replace=True, p=probs)
+        speakers = np.random.choice(np.arange(0,population.size), size=n_contexts, replace=True, p=probs)
+        speaker_order = [population.population[x] for x in speakers]
     return speaker_order
 
 class Agent(object):
@@ -1248,11 +1250,11 @@ class Population(object):
         parent_fitness_array = self.calc_fitness(selection_type, selection_weighting, communication_type, ca_measure_type, n_interactions, self.parent_index_per_learner, self.parent_generation, self.parent_lex_indices)
         avg_fitness = np.mean(parent_fitness_array)
         if selection_weighting == 'none':
-            parent_probs = np.divide(parent_fitness_array, np.sum(parent_fitness_array))
+            parent_probs = normalize(parent_fitness_array)
         elif isinstance(selection_weighting, float):
             parent_fitness_array_weighted = np.multiply(parent_fitness_array, selection_weighting)
             parent_fitness_array_weighted_exp = np.exp(parent_fitness_array_weighted)
-            parent_probs = np.divide(parent_fitness_array_weighted_exp, np.sum(parent_fitness_array_weighted_exp))
+            parent_probs = normalize(parent_fitness_array_weighted_exp)
         if turnover_type == 'chain':
             n_agents_to_be_replaced = 1
         elif turnover_type == 'whole_pop':
@@ -1313,6 +1315,7 @@ class Population(object):
                 self.learning_types_per_agent = np.delete(self.learning_types_per_agent, 0)
                 self.learning_types_per_agent = np.append(self.learning_types_per_agent, new_agent.learning_type)
             print(' | took {:.2f}s'.format(time.time()-start)),
+
         else: # multiprocessing doesn't work with 'chain' condition!
             start = time.time()
             pool = ProcessPool(nodes=n_procs)
@@ -1390,601 +1393,6 @@ class Population(object):
             agent.print_agent()
 
 
-
-
-
-# class MixedPopulation(Population):
-#     """
-#     A MixedPopulation can contain agents of different pragmatic levels
-#     """
-#     def __init__(self, size, n_meanings, n_signals, hypothesis_space, perspective_hyps, lexicon_hyps, learner_perspective, perspective_prior_type, perspective_prior_strength, lexicon_prior_type, lexicon_prior_strength, perspectives, perspective_probs, sal_alpha, lex_indices_per_agent, lexicons_per_agent, production_error, extra_error, pragmatic_level_initial_pop, optimality_alpha_initial_pop, pragmatic_level_mutants, optimality_alpha_mutants, pragmatic_level_parent_hyp, n_contexts, context_type, context_generation, context_size, helpful_contexts, n_utterances, learning_types, learning_type_probs):
-#         """
-#         :param size: The size of the population (integer)
-#         :param agent_type: The type of agents (can be set to either 'p_distinction' or 'no_p_distinction')
-#         :param perspectives: The perspectives that the agents can have
-#         :param perspective_probs: The probabilities with which the different perspectives will be present in the population
-#         :param lexicons: The lexicons that the agents can have
-#         :param lexicon_probs: The probabilities with which the different lexicons will be present in the population
-#         :param learning_types: The learning types that the agents can have
-#         :param learning_type_probs: The probabilities with which the different learning types will be present in the population
-#         :return: Creates a population with the specified attributes
-#         """
-#         self.pop_type = 'mixed'
-#         self.size = size
-#         self.agent_type = 'no_p_distinction'
-#         self.n_meanings = n_meanings
-#         self.n_signals = n_signals
-#         self.hypothesis_space = hypothesis_space
-#         self.perspective_hyps = perspective_hyps
-#         self.learner_perspective = learner_perspective
-#         self.perspective_prior_type = perspective_prior_type
-#         self.perspective_prior_strength = perspective_prior_strength
-#         self.lexicon_prior_type = lexicon_prior_type
-#         self.lexicon_prior_strength = lexicon_prior_strength
-#         self.perspectives = perspectives #TODO: Change this so that this is just the same attribute as self.perspective_hyps
-#         self.perspective_probs = perspective_probs
-#         self.perspectives_per_agent = []
-#         self.sal_alpha = sal_alpha
-#         self.lexicon_hyps = lexicon_hyps
-#         self.error = production_error
-#         self.extra_error = extra_error
-#         self.pragmatic_level_initial_pop = pragmatic_level_initial_pop
-#         self.optimality_alpha_initial_pop = optimality_alpha_initial_pop
-#         self.pragmatic_level_mutants = pragmatic_level_mutants
-#         self.optimality_alpha_mutants = optimality_alpha_mutants
-#         self.pragmatic_level_parent_hyp = pragmatic_level_parent_hyp
-#         self.n_contexts = n_contexts
-#         self.context_type = context_type
-#         self.context_generation = context_generation
-#         self.context_size = context_size
-#         self.helpful_contexts = helpful_contexts
-#         self.n_utterances = n_utterances
-#         self.lexicons_per_agent = lexicons_per_agent
-#         # The initial generation all gets the same lexicon index, of the final lexicon in the lexicon hypothesis space, which is the lexicon that maps all meanings to all signals. Those lexicon indices are used to calculate the communicative accuracy of the first generation of agents with their non-existent parent. (So we assume that the 'parents' of generation 0 all have the same fully ambiguous all-to-all lexicon.)
-#         self.lex_indices_per_agent = lex_indices_per_agent
-#         self.parent_index_per_learner = np.arange(size)
-#         self.parent_generation = []
-#         self.parent_lex_indices = np.zeros(size)
-#         self.learning_types = learning_types
-#         self.learning_type_probs = learning_type_probs
-#         self.learning_types_per_agent = []
-#         self.lexicons = []
-#         self.population = self.create_pop()
-
-
-
-#     def create_pop(self):
-#         """
-#         :return: A list containing all the Agent objects in the population
-#         """
-#         population = []
-
-#         pop_perspectives = np.random.choice(self.perspectives, size=self.size, p=self.perspective_probs)
-
-#         self.perspectives_per_agent = pop_perspectives
-#         self.learning_types_per_agent = np.random.choice(self.learning_types, size=self.size, p=self.learning_type_probs)
-#         perspective_prior = prior.create_perspective_prior(self.perspective_hyps, self.lexicon_hyps, self.perspective_prior_type, self.learner_perspective, self.perspective_prior_strength)
-#         lexicon_prior = prior.create_lexicon_prior(self.lexicon_hyps, self.lexicon_prior_type, self.lexicon_prior_strength, self.error)
-#         composite_log_priors_population = prior.list_composite_log_priors(self.agent_type, self.size, self.hypothesis_space, self.perspective_hyps, self.lexicon_hyps, perspective_prior, lexicon_prior) # The full set of composite priors on a LOG SCALE (1D numpy array)
-#         for i in range(self.size):
-#             perspective = pop_perspectives[i]
-#             lexicon = Lexicon('specified_lexicon', self.n_meanings, self.n_signals, specified_lexicon=self.lexicons_per_agent[i])
-#             learning_type = self.learning_types_per_agent[i]
-#             #FIXME: A bit strange that the default attributes for creating an agent have to be specified as parameters in the params_and_run module, is it not..? (see all three if and elif statements below)
-
-#             if self.pragmatic_level_initial_pop == 'literal' or self.pragmatic_level_initial_pop == 'perspective-taking':
-#                 agent = Agent(self.perspective_hyps, self.lexicon_hyps, composite_log_priors_population, composite_log_priors_population, perspective, self.sal_alpha, lexicon, learning_type, self.pragmatic_level_initial_pop)
-#             elif self.pragmatic_level_initial_pop == 'prag':
-#                 agent = PragmaticAgent(self.perspective_hyps, self.lexicon_hyps, composite_log_priors_population, composite_log_priors_population, perspective, self.sal_alpha, lexicon, learning_type, self.pragmatic_level_parent_hyp, self.pragmatic_level_initial_pop, self.optimality_alpha, self.extra_error)
-
-#             agent.id = int(i)
-#             population.append(agent)
-#         return population
-
-
-#     def calc_fitness_old(self, selection_type, selection_weighting, communication_type_initial_pop, ca_measure_type_initial_pop, communication_type_mutants, ca_measure_type_mutants, n_interactions, learners, parent_index_per_learner, parents, parent_lex_indices):
-#         """
-#         :param selection_type: This can be set to either 'p_taking', 'l_learning' or 'ca_with_parent'
-#         :param selection_weighting: This determines the strength of the selection (the larger the stronger)
-#         :return:
-#         """
-#         pop_log_posteriors = self.get_all_log_posteriors_matrix()
-#         pop_posteriors_unlogged = np.exp(pop_log_posteriors)
-#         fitness_per_agent = np.ones(len(learners))
-#         for a in range(len(learners)):
-#             learner_posteriors = pop_posteriors_unlogged[a]
-#             learner_posteriors_split_on_p_hyps = np.split(learner_posteriors, len(self.perspective_hyps))
-#             learner_fitness = 0.
-#             learner = learners[a]
-#             parent_index = parent_index_per_learner[a]
-#             if len(parents) == 0:
-#                 parent = learner
-#             else:
-#                 parent = parents[parent_index.astype(int)]
-#             if selection_type == 'p_taking':
-#                 #TODO: Write this part of the function to be the same as the 'l_learning' part?
-#                 for p in range(len(self.perspective_hyps)):
-#                     p_frequency = self.perspective_probs[p]
-#                     p_posteriors = learner_posteriors_split_on_p_hyps[p]
-#                     p_posteriors_times_freq = np.multiply(p_posteriors, p_frequency)
-#                     p_posteriors_times_freq_sum = np.sum(p_posteriors_times_freq)
-#                     learner_fitness += p_posteriors_times_freq_sum
-#                 fitness_per_agent[a] = learner_fitness
-#             elif selection_type == 'l_learning':
-#                 parent_lex_index = parent_lex_indices[a]
-#                 learner_posteriors_split_on_p_hyps = np.array(learner_posteriors_split_on_p_hyps)
-#                 l_posteriors = learner_posteriors_split_on_p_hyps[:, parent_lex_index]
-#                 learner_fitness = np.sum(l_posteriors)
-#                 fitness_per_agent[a] = learner_fitness
-#             elif selection_type == 'ca_with_parent':
-#                 if self.pragmatic_level_initial_pop == 'literal' or self.pragmatic_level_initial_pop == 'perspective-taking' and learner.pragmatic_level == 'literal' or learner.pragmatic_level == 'perspective-taking':
-#                     learner_fitness = self.calc_comm_acc(communication_type_initial_pop, ca_measure_type_initial_pop, n_interactions, parent, learner)
-#                 elif self.pragmatic_level_mutants == 'prag' and learner.pragmatic_level == 'prag':
-#                     learner_fitness = self.calc_comm_acc(communication_type_mutants, ca_measure_type_mutants, n_interactions, parent, learner)
-#                 fitness_per_agent[a] = learner_fitness
-#         return fitness_per_agent
-
-
-
-
-#     def calc_fitness(self, selection_type, selection_weighting, communication_type_initial_pop, ca_measure_type_initial_pop, communication_type_mutants, ca_measure_type_mutants, n_interactions, learners, parent_index_per_learner, parents, parent_lex_indices):
-
-#     #def calc_fitness(self, selection_type, selection_weighting, communication_type, ca_measure_type, n_interactions, parent_index_per_learner, parents, parent_lex_indices):
-#         """
-#         :param selection_type: This can be set to either 'p_taking', 'l_learning' or 'ca_with_parent'
-#         :param selection_weighting: This determines the strength of the selection (the larger the stronger)
-#         :return:
-#         """
-
-#         pop_log_posteriors = self.get_all_log_posteriors_matrix()
-#         fitness_per_agent = np.ones(self.size)
-
-#         for a in range(self.size):
-#             learner_log_posteriors = pop_log_posteriors[a]
-#             learner_log_posteriors_split_on_p_hyps = np.array(np.split(learner_log_posteriors, len(self.perspective_hyps)))
-#             learner = self.population[a]
-#             parent_index = int(parent_index_per_learner[a])
-#             if len(parents) == 0:
-#                 parent = learner
-#             else:
-#                 parent = parents[parent_index]
-
-#             if selection_type == 'p_taking':
-#                 parent_perspective = parent.perspective
-#                 parent_p_index = np.where(self.perspective_hyps == parent_perspective)[0][0]
-#                 p_log_posteriors = learner_log_posteriors_split_on_p_hyps[parent_p_index, :]
-#                 learner_fitness = np.exp(logsumexp(p_log_posteriors))
-#                 fitness_per_agent[a] = learner_fitness
-
-#             elif selection_type == 'l_learning':
-#                 parent_lex_index = int(parent_lex_indices[a])
-#                 l_log_posteriors = learner_log_posteriors_split_on_p_hyps[:, parent_lex_index]
-#                 learner_fitness = np.exp(logsumexp(l_log_posteriors))
-#                 fitness_per_agent[a] = learner_fitness
-
-#             elif selection_type == 'ca_with_parent':
-#                 if self.pragmatic_level_initial_pop == 'literal' or self.pragmatic_level_initial_pop == 'perspective-taking' and learner.pragmatic_level == 'literal' or learner.pragmatic_level == 'perspective-taking':
-#                     learner_fitness = self.calc_comm_acc(communication_type_initial_pop, ca_measure_type_initial_pop, n_interactions, parent, learner)
-#                 elif self.pragmatic_level_mutants == 'prag' and learner.pragmatic_level == 'prag':
-#                     learner_fitness = self.calc_comm_acc(communication_type_mutants, ca_measure_type_mutants, n_interactions, parent, learner)
-#                 fitness_per_agent[a] = learner_fitness
-
-#         return fitness_per_agent
-
-
-
-
-
-
-
-#     def insert_mutant(self, context_generation, helpful_contexts, n_signals, error, turnover_type, selection_type, selection_weighting, communication_type_initial_pop, ca_measure_type_initial_pop, communication_type_mutants, ca_measure_type_mutants, n_interactions, teacher_type, n_mutants):
-#         """
-#         :param turnover_type: 'chain' for one agent at a time, or 'whole_pop' for the whole population at once
-#         :return: Doesn't return anything, but changes self.population to the new population
-#         """
-#         pragmatic_level_per_agent = ['' for a in range(self.size)]
-
-#         parent_fitness_array = self.calc_fitness(selection_type, selection_weighting, communication_type_initial_pop, ca_measure_type_initial_pop, communication_type_mutants, ca_measure_type_mutants, n_interactions, self.population, self.parent_index_per_learner, self.parent_generation, self.parent_lex_indices)
-#         avg_fitness = np.mean(parent_fitness_array)
-
-#         if selection_weighting == 'none':
-#             parent_probs = np.divide(parent_fitness_array, np.sum(parent_fitness_array))
-#         elif isinstance(selection_weighting, float):
-#             parent_fitness_array_weighted = np.multiply(parent_fitness_array, selection_weighting)
-#             parent_fitness_array_weighted_exp = np.exp(parent_fitness_array_weighted)
-#             parent_probs = np.divide(parent_fitness_array_weighted_exp, np.sum(parent_fitness_array_weighted_exp))
-
-#         if turnover_type == 'chain':
-#             n_agents_to_be_replaced = 1
-#         elif turnover_type == 'whole_pop':
-#             n_agents_to_be_replaced = self.size
-
-#         # 1) For the number of agents that need to be replaced in the population, we do the following:
-#         # FIXME: Figure out why the prior and posterior of ALL agents is updated in the chain method, when it should update only those of the new agent
-
-#         data_per_agent = []
-#         # 1.1) First we generate data_dict from the current population:
-#         for i in range(n_agents_to_be_replaced):
-#             if self.context_generation == 'random':
-#                 context_matrix = gen_context_matrix(self.context_type, self.n_meanings, self.context_size, self.n_contexts)
-#             elif self.context_generation == 'only_helpful':
-#                 context_matrix = gen_helpful_context_matrix(self.n_meanings, self.n_contexts, self.helpful_contexts)
-#             elif self.context_generation == 'optimal':
-#                 context_matrix = gen_helpful_context_matrix_fixed_order(self.n_meanings, self.n_contexts, self.helpful_contexts)
-
-#             speaker_order = create_speaker_order_iteration(self, selection_type, parent_probs, teacher_type, self.n_contexts)
-#             if len(speaker_order) > 0:
-#                 self.parent_index_per_learner[i] = speaker_order[0].id
-#             else:
-#                 self.parent_index_per_learner[i] = 0
-
-#             if context_generation == 'random':
-#                 old_pop_data = self.produce_pop_data(context_matrix, self.n_utterances, speaker_order)
-#             elif context_generation == 'optimal':
-#                 old_pop_data = self.produce_pop_data_fixed_contexts(context_matrix, self.n_utterances, speaker_order, helpful_contexts, n_signals)
-#             data_per_agent.append(old_pop_data)
-#         self.parent_generation = self.population
-#         self.parent_lex_indices = np.zeros(self.size)
-#         for a in range(self.size):
-#             parent_index = self.parent_index_per_learner[a]
-#             self.parent_lex_indices[a] = self.lex_indices_per_agent[parent_index]
-#         selected_hyp_per_agent_matrix = np.zeros(n_agents_to_be_replaced).astype(int)
-#         normalized_log_posteriors_per_agent_matrix = np.zeros((n_agents_to_be_replaced, len(self.hypothesis_space)))
-#         for i in range(n_agents_to_be_replaced):
-#             # 1.2) Then we choose the new agent's perspective and learning_type with uniform probability from the attributes self.perspective_probs and self.learning_probs:
-#             new_agent_perspective = np.random.choice(self.perspectives, size=1, p=self.perspective_probs)
-#             new_agent_learning_type = np.random.choice(self.learning_types, size=1, p=self.learning_type_probs)
-#             new_agent_lexicon = Lexicon('empty_lex', self.n_meanings, self.n_signals)
-
-#             # 1.3) Then we initialize the new agent with that perspective and learning_type and with an empty lexicon
-#             #FIXME: Again: the new agent is initialized with attributes that are globally defined in the params_and_run module ()
-#             perspective_prior = prior.create_perspective_prior(self.perspective_hyps, self.lexicon_hyps, self.perspective_prior_type, self.learner_perspective, self.perspective_prior_strength)
-#             lexicon_prior = prior.create_lexicon_prior(self.lexicon_hyps, self.lexicon_prior_type, self.lexicon_prior_strength, self.error)
-#             composite_log_priors = prior.list_composite_log_priors(self.agent_type, self.size, self.hypothesis_space, self.perspective_hyps, self.lexicon_hyps, perspective_prior, lexicon_prior)
-
-#             if i < n_agents_to_be_replaced - n_mutants:
-#                 if self.pragmatic_level_initial_pop == 'literal' or self.pragmatic_level_initial_pop == 'perspective-taking':
-#                     new_agent = Agent(self.perspective_hyps, self.lexicon_hyps, composite_log_priors, composite_log_priors, new_agent_perspective[0], self.sal_alpha, new_agent_lexicon, new_agent_learning_type[0], self.pragmatic_level_initial_pop)
-#                 elif self.pragmatic_level == 'prag':
-#                     new_agent = PragmaticAgent(self.perspective_hyps, self.lexicon_hyps, composite_log_priors, composite_log_priors, new_agent_perspective[0], self.sal_alpha, new_agent_lexicon, new_agent_learning_type[0], self.pragmatic_level, self.pragmatic_level, self.optimality_alpha, self.extra_error)
-#             elif i >= n_agents_to_be_replaced - n_mutants:
-#                 if self.pragmatic_level_mutants == 'literal' or self.pragmatic_level_mutants == 'perspective-taking':
-#                     new_agent = Agent(self.perspective_hyps, self.lexicon_hyps, composite_log_priors, composite_log_priors, new_agent_perspective[0], self.sal_alpha, new_agent_lexicon, new_agent_learning_type[0], self.pragmatic_level_mutants)
-#                 elif self.pragmatic_level_mutants == 'prag':
-#                     new_agent = PragmaticAgent(self.perspective_hyps, self.lexicon_hyps, composite_log_priors, composite_log_priors, new_agent_perspective[0], self.sal_alpha, new_agent_lexicon, new_agent_learning_type[0], self.pragmatic_level_mutants, self.pragmatic_level_mutants, self.optimality_alpha_mutants, self.extra_error)
-
-#             # 1.4) Then we get the new agent's parent data from the old population:
-#             agent_data = data_per_agent[i]
-
-#             # 1.5) We subsequently let the new agent learn from the annotated_pop_data of the population and update its lexicon accordingly:
-#             normalized_log_posteriors_per_agent_matrix[i] = new_agent.inference_on_signal_counts_data(agent_data, error)
-
-#             selected_hyp, selected_lex_hyp = new_agent.update_lexicon()
-#             selected_hyp_per_agent_matrix[i] = selected_hyp
-#             self.lex_indices_per_agent[i] = selected_lex_hyp
-
-#             # 1.6) Then, we remove the oldest agent (c.e. agent with index 0) from the population, and append the new agent at the end:
-#             self.population = np.delete(self.population, 0)
-#             self.population = np.append(self.population, new_agent)  # Appends the new agent to the end of the population
-#             self.perspectives_per_agent = np.delete(self.perspectives_per_agent, 0)
-#             self.perspectives_per_agent = np.append(self.perspectives_per_agent, new_agent.perspective)
-#             self.lexicons_per_agent = np.delete(self.lexicons_per_agent, 0)
-#             self.lexicons_per_agent = np.append(self.population, new_agent.lexicon)
-#             self.learning_types_per_agent = np.delete(self.learning_types_per_agent, 0)
-#             self.learning_types_per_agent = np.append(self.population, new_agent.learning_type)
-
-#         # 1.7) Finally, the agent id numbers are updated:
-#         for i in range(self.size):
-#             agent = self.population[i]
-#             agent.id = i
-#             pragmatic_level_per_agent[i] = agent.pragmatic_level
-#         return selected_hyp_per_agent_matrix, avg_fitness, parent_probs, self.parent_index_per_learner, self.parent_lex_indices, pragmatic_level_per_agent
-
-
-
-#     def pop_update(self, context_generation, helpful_contexts, n_meanings, n_signals, error, turnover_type, selection_type, selection_weighting, communication_type_initial_pop, ca_measure_type_initial_pop, communication_type_mutants, ca_measure_type_mutants, n_interactions, teacher_type, perspectives_per_agent=None, decoupled=None):
-#         """
-#         :param turnover_type: 'chain' for one agent at a time, or 'whole_pop' for the whole population at once
-#         :return: Doesn't return anything, but changes self.population to the new population
-#         """
-
-#         pragmatic_level_per_agent = ['' for a in range(self.size)]
-
-#         parent_fitness_array = self.calc_fitness(selection_type, selection_weighting, communication_type_initial_pop, ca_measure_type_initial_pop, communication_type_mutants, ca_measure_type_mutants, n_interactions, self.population, self.parent_index_per_learner, self.parent_generation, self.parent_lex_indices)
-
-#         avg_fitness = np.mean(parent_fitness_array)
-#         if selection_weighting == 'none':
-#             parent_probs = np.divide(parent_fitness_array, np.sum(parent_fitness_array))
-#         elif isinstance(selection_weighting, float):
-#             parent_fitness_array_weighted = np.multiply(parent_fitness_array, selection_weighting)
-#             parent_fitness_array_weighted_exp = np.exp(parent_fitness_array_weighted)
-#             parent_probs = np.divide(parent_fitness_array_weighted_exp, np.sum(parent_fitness_array_weighted_exp))
-
-#         if turnover_type == 'chain':
-#             n_agents_to_be_replaced = 1
-#         elif turnover_type == 'whole_pop':
-#             n_agents_to_be_replaced = self.size
-
-#         # 1) For the number of agents that need to be replaced in the population, we do the following:
-#         # FIXME: Figure out why the prior and posterior of ALL agents is updated in the chain method, when it should update only those of the new agent
-
-#         # 1.1) First we generate a list of biological parents in case the decoupled parameter (which decouples biological from cultural inheritance) is set to True:
-#         if decoupled == True:
-#             bio_parent_per_learner = np.random.choice(self.population, size=n_agents_to_be_replaced, p=parent_probs)
-#         else:
-#             bio_parent_per_learner = self.population[self.parent_index_per_learner]
-#         pragmatic_level_bio_parent_per_learner = [bio_parent.pragmatic_level for bio_parent in bio_parent_per_learner]
-#         optimality_alpha_bio_parent_per_learner = [bio_parent.optimality_alpha for bio_parent in bio_parent_per_learner]
-
-#         # 1.2) Then we generate data_dict from the current population:
-#         data_per_agent = []
-#         for i in range(n_agents_to_be_replaced):
-#             if self.context_generation == 'random':
-#                 context_matrix = gen_context_matrix(self.context_type, self.n_meanings, self.context_size, self.n_contexts)
-#             elif self.context_generation == 'only_helpful':
-#                 context_matrix = gen_helpful_context_matrix(self.n_meanings, self.n_contexts, self.helpful_contexts)
-#             elif self.context_generation == 'optimal':
-#                 context_matrix = gen_helpful_context_matrix_fixed_order(self.n_meanings, self.n_contexts, self.helpful_contexts)
-
-#             speaker_order = create_speaker_order_iteration(self, selection_type, parent_probs, teacher_type, self.n_contexts)
-
-#             if len(speaker_order) > 0:
-#                 self.parent_index_per_learner[i] = speaker_order[0].id
-#             else:
-#                 self.parent_index_per_learner[i] = 0
-
-#             if context_generation == 'random':
-#                 old_pop_data = self.produce_pop_data(context_matrix, self.n_utterances, speaker_order)
-#             elif context_generation == 'optimal':
-#                 old_pop_data = self.produce_pop_data_fixed_contexts(context_matrix, self.n_utterances, speaker_order, helpful_contexts, n_signals)
-#             data_per_agent.append(old_pop_data)
-#         self.parent_generation = self.population
-#         self.parent_lex_indices = np.zeros(self.size)
-#         for a in range(self.size):
-#             parent_index = self.parent_index_per_learner[a]
-#             self.parent_lex_indices[a] = self.lex_indices_per_agent[parent_index]
-#         selected_hyp_per_agent_matrix = np.zeros(n_agents_to_be_replaced).astype(int)
-#         normalized_log_posteriors_per_agent_matrix = np.zeros((n_agents_to_be_replaced, len(self.hypothesis_space)))
-
-#         for i in range(n_agents_to_be_replaced):
-#             # 1.3) We choose the new agent's perspective and learning_type with uniform probability from the attributes self.perspective_probs and self.learning_probs:
-#             new_agent_perspective = np.random.choice(self.perspectives, size=1, p=self.perspective_probs)
-#             new_agent_learning_type = np.random.choice(self.learning_types, size=1, p=self.learning_type_probs)
-#             new_agent_lexicon = Lexicon('empty_lex', self.n_meanings, self.n_signals)
-
-#             # 1.4) Then we initialize the new agent with that perspective and learning_type and with an empty lexicon
-#             #FIXME: Again: the new agent is initialized with attributes that are globally defined in the params_and_run module ()
-#             perspective_prior = prior.create_perspective_prior(self.perspective_hyps, self.lexicon_hyps, self.perspective_prior_type, self.learner_perspective, self.perspective_prior_strength)
-#             lexicon_prior = prior.create_lexicon_prior(self.lexicon_hyps, self.lexicon_prior_type, self.lexicon_prior_strength, self.error)
-#             composite_log_priors = prior.list_composite_log_priors(self.agent_type, self.size, self.hypothesis_space, self.perspective_hyps, self.lexicon_hyps, perspective_prior, lexicon_prior)
-
-#             if pragmatic_level_bio_parent_per_learner[i] == 'literal' or pragmatic_level_bio_parent_per_learner[i] == 'perspective-taking':
-#                 new_agent = Agent(self.perspective_hyps, self.lexicon_hyps, composite_log_priors, composite_log_priors, new_agent_perspective[0], self.sal_alpha, new_agent_lexicon, new_agent_learning_type[0])
-#             elif pragmatic_level_bio_parent_per_learner[i] == 'prag':
-#                 new_agent = PragmaticAgent(self.perspective_hyps, self.lexicon_hyps, composite_log_priors, composite_log_priors, new_agent_perspective[0], self.sal_alpha, new_agent_lexicon, new_agent_learning_type[0], pragmatic_level_bio_parent_per_learner[i], pragmatic_level_bio_parent_per_learner[i], optimality_alpha_bio_parent_per_learner[i], self.extra_error)
-
-#             # 1.5) Then we get the new agent's parent data from the old population:
-#             agent_data = data_per_agent[i]
-
-#             # 1.6) We subsequently let the new agent learn from the annotated_pop_data of the population and update its lexicon accordingly:
-
-
-#             normalized_log_posteriors_per_agent_matrix[i] = new_agent.inference_on_signal_counts_data(agent_data, error)
-
-#             selected_hyp, selected_lex_hyp = new_agent.update_lexicon()
-#             selected_hyp_per_agent_matrix[i] = selected_hyp
-#             self.lex_indices_per_agent[i] = selected_lex_hyp
-
-
-#             # 1.7) Then, we remove the oldest agent (c.e. agent with index 0) from the population, and append the new agent at the end:
-#             self.population = np.delete(self.population, 0)
-#             self.population = np.append(self.population, new_agent)  # Appends the new agent to the end of the population
-#             self.perspectives_per_agent = np.delete(self.perspectives_per_agent, 0)
-#             self.perspectives_per_agent = np.append(self.perspectives_per_agent, new_agent.perspective)
-#             self.lexicons_per_agent = np.delete(self.lexicons_per_agent, 0)
-#             self.lexicons_per_agent = np.append(self.population, new_agent.lexicon)
-#             self.learning_types_per_agent = np.delete(self.learning_types_per_agent, 0)
-#             self.learning_types_per_agent = np.append(self.population, new_agent.learning_type)
-
-#         # 1.8) Finally, the agent id numbers are updated:
-#         for i in range(self.size):
-#             agent = self.population[i]
-#             agent.id = i
-#             pragmatic_level_per_agent[i] = agent.pragmatic_level
-
-#         return selected_hyp_per_agent_matrix, avg_fitness, parent_probs, self.parent_index_per_learner, self.parent_lex_indices, pragmatic_level_per_agent
-
-
-
-
-
-
-# class DistinctionPopulation(Population):
-#     """
-#     A Population object consists of a list of Agent objects
-#     """
-#     def __init__(self, size, n_meanings, n_signals, hypothesis_space, perspective_hyps, lexicon_hyps, learner_perspective, perspective_prior_type, perspective_prior_strength, lexicon_prior_type, lexicon_prior_strength, composite_log_prior, perspectives, perspectives_per_agent, perspective_probs, alpha, lexicons, lexicons_per_agent, production_error, n_contexts, context_type, context_generation, context_size, helpful_contexts, n_utterances, learning_types, learning_types_per_agent, learning_type_probs):
-#         """
-#         :param size: The size of the population (integer)
-#         :param agent_type: The type of agents (can be set to either 'p_distinction' or 'no_p_distinction')
-#         :param perspectives: The perspectives that the agents can have
-#         :param perspectives_per_agent: A 1D numpy array of length size, with for each agent index the perspective that that agent will have
-#         :param lexicons: The lexicons that the agents can have
-#         :param lexicons_per_agent: A 1D numpy array of length size, with for each agent index the lexicon that that agent will have
-#         :param learning_types: The learning types that the agents can have
-#         :param learning_types_per_agent: A 1D numpy array of length size, with for each agent index the learning type that that agent will have
-#         :return: Creates a population with the specified attributes
-#         """
-#         self.pop_type = 'singular'
-#         self.size = size
-#         self.agent_type = 'p_distinction'
-#         self.n_meanings = n_meanings
-#         self.n_signals = n_signals
-#         self.hypothesis_space = hypothesis_space
-#         self.perspective_hyps = perspective_hyps
-#         self.lexicon_hyps = lexicon_hyps
-#         self.learner_perspective = learner_perspective
-#         self.perspective_prior_type = perspective_prior_type
-#         self.perspective_prior_strength = perspective_prior_strength
-#         self.lexicon_prior_type = lexicon_prior_type
-#         self.lexicon_prior_strength = lexicon_prior_strength
-#         self.composite_log_prior = composite_log_prior
-#         self.perspectives = perspectives
-#         self.perspectives_per_agent = perspectives_per_agent
-#         self.perspective_probs = perspective_probs
-#         self.alpha = alpha
-#         self.lexicons = lexicons
-#         self.lexicons_per_agent = lexicons_per_agent
-#         self.lex_indices_per_agent = np.zeros(size)
-#         self.error = production_error
-#         self.n_contexts = n_contexts
-#         self.context_type = context_type
-#         self.context_generation = context_generation
-#         self.context_size = context_size
-#         self.helpful_contexts = helpful_contexts
-#         self.n_utterances = n_utterances
-#         self.parent_index_per_learner = np.zeros(size)
-#         self.parent_generation = []
-#         self.parent_lex_indices = np.zeros(size)
-#         self.learning_types = learning_types
-#         self.learning_types_per_agent = learning_types_per_agent
-#         self.learning_type_probs = learning_type_probs
-#         self.population = self.create_pop()
-
-#     def create_pop(self):
-#         """
-#         :return: A list containing all the Agent objects in the population
-#         """
-#         population = []
-#         for i in range(self.size):
-#             perspective = self.perspectives_per_agent[i]
-#             lexicon = self.lexicons_per_agent[i]
-#             learning_type = self.learning_types_per_agent[i]
-#             #FIXME: A bit strange that the default attributes for creating an agent have to be specified as parameters in the params_and_run module, is it not..? (see all three if and elif statements below)
-#             agent = DistinctionAgent(self.perspective_hyps, self.lexicon_hyps, self.composite_log_prior, self.composite_log_prior, perspective, self.alpha, lexicon, learning_type, self.size)
-#             agent.id = int(i)
-#             population.append(agent)
-#         return population
-
-
-#     def produce_pop_data(self, n_meanings, n_signals, error, context_matrix, n_utterances, speaker_order):
-#         """
-#         :param context_matrix: A 2D numpy matrix of contexts
-#         :param n_utterances: Global variable determining the number of utterances produced per context (float)
-#         :param parent_type: This can be set to either 'single_parent' or 'multi_parent'
-#         :param speaker_order: A 1D numpy array containing speaker indices of length n_contexts. For each context, the agent with the ID on the corresponding index in speaker_order_same_first will be the speaker. (The reason for this is that the order of speakers has to be fixed over runs. Only when the speaker is the same on each context index over the whole set of runs can the mean, median and quartiles be calculated accurately. Another reason is that fixing the speaker_order_same_first allows for manipulating the staging of the input data_dict.)
-#         :return: A data_dict object produced by the population, for which speakers have been chosen from the population with uniform probability
-#         """
-#         pop_topic_matrix = np.zeros((len(context_matrix), n_utterances))
-#         pop_utterance_matrix = np.zeros((len(context_matrix), n_utterances))
-#         speaker_id_matrix = np.zeros(len(context_matrix))
-#         for c in range(len(context_matrix)):
-#             context = context_matrix[c]
-#             speaker = speaker_order[c]
-#             speaker_data = speaker.produce_data(self.n_meanings, self.n_signals, np.array([context]), self.n_utterances, self.error)
-#             speaker_topics = speaker_data.topics[0]
-#             speaker_utterances = speaker_data.utterances[0]
-#             pop_topic_matrix[c] = speaker_topics
-#             pop_utterance_matrix[c] = speaker_utterances
-#             #TODO: Note that at the moment there is only one speaker per context
-#             #TODO: The speaker_id_matrix can probably be generated more efficiently now that we feed a fixed speaker_order_same_first array into this method.
-#             speaker_id_matrix[c] = speaker.id
-#             pop_data = SpeakerAnnotatedData(context_matrix, pop_topic_matrix, pop_utterance_matrix, speaker_id_matrix)
-#         return pop_data
-
-
-#     def pop_update(self, recording, n_meanings, n_signals, error, turnover_type, selection_type, selection_weighting, communication_type, ca_measure_type, n_interactions, teacher_type, speaker_order_type, first_input_stage_ratio, perspectives_per_agent=None):
-#         """
-#         :param turnover_type: 'chain' for one agent at a time, or 'whole_pop' for the whole population at once
-#         :return: Doesn't return anything, but changes self.population to the new population
-#         """
-#         #TODO: Check that this is equivalent to the method in the Population object!
-
-#         parent_fitness_array = self.calc_fitness(selection_type, selection_weighting, communication_type, ca_measure_type, n_interactions, self.parent_index_per_learner, self.parent_generation, self.parent_lex_indices)
-#         avg_fitness = np.mean(parent_fitness_array)
-
-#         if selection_weighting == 'none':
-#             parent_probs = np.divide(parent_fitness_array, np.sum(parent_fitness_array))
-#         elif isinstance(selection_weighting, float):
-#             parent_fitness_array_weighted = np.multiply(parent_fitness_array, selection_weighting)
-#             parent_fitness_array_weighted_exp = np.exp(parent_fitness_array_weighted)
-#             parent_probs = np.divide(parent_fitness_array_weighted_exp, np.sum(parent_fitness_array_weighted_exp))
-
-
-#         if turnover_type == 'chain':
-#             n_agents_to_be_replaced = 1
-#         elif turnover_type == 'whole_pop':
-#             n_agents_to_be_replaced = self.size
-
-#         # 1) For the number of agents that need to be replaced in the population, we do the following:
-#         # FIXME: Figure out why the prior and posterior of ALL agents is updated in the chain method, when it should update only those of the new agent
-
-#         data_per_agent = []
-#         for i in range(n_agents_to_be_replaced):
-
-#             # 1.1) Then we generate a data_dict from the current population:
-#             if self.context_generation == 'random':
-#                 context_matrix = gen_context_matrix(self.context_type, self.n_meanings, self.context_size, self.n_contexts)
-#             elif self.context_generation == 'only_helpful':
-#                 context_matrix = gen_helpful_context_matrix(self.n_meanings, self.n_contexts, self.helpful_contexts)
-#             elif self.context_generation == 'optimal':
-#                 context_matrix = gen_helpful_context_matrix_fixed_order(self.n_meanings, self.n_contexts, self.helpful_contexts)
-
-#             speaker_order = create_speaker_order_iteration(self, selection_type, parent_probs, teacher_type, self.n_contexts)
-#             if teacher_type == 'single_parent':
-#                 self.parent_index_per_learner[i] = speaker_order[0].id
-
-#             old_pop_data = self.produce_pop_data(n_meanings, n_signals, error, context_matrix, self.n_utterances, speaker_order)
-#             data_per_agent.append(old_pop_data)
-
-#         self.parent_generation = self.population
-#         self.parent_lex_indices = np.zeros(self.size)
-#         for a in range(self.size):
-#             parent_index = self.parent_index_per_learner[a]
-#             self.parent_lex_indices[a] = self.lex_indices_per_agent[parent_index]
-
-#         selected_hyp_per_agent_matrix = np.zeros(n_agents_to_be_replaced)
-#         normalized_log_posteriors_per_data_point_per_agent_matrix = np.zeros((n_agents_to_be_replaced, (self.n_contexts + 1), len(self.hypothesis_space)))
-#         for i in range(n_agents_to_be_replaced):
-
-#             # 1.2) We choose the new agent's perspective and learning_type with uniform probability from the attributes self.perspective_probs and self.learning_probs:
-#             new_agent_perspective = np.random.choice(self.perspectives, size=1, p=self.perspective_probs)
-#             new_agent_learning_type = np.random.choice(self.learning_types, size=1, p=self.learning_type_probs)
-#             new_agent_lexicon = Lexicon('empty_lex', self.n_meanings, self.n_signals)
-
-#             # 1.3) Then we initialize the new agent with that perspective and learning_type and with an empty lexicon
-#             # FIXME: Again: the new agent is initialized with attributes that are globally defined in the params_and_run module ()
-#             perspective_prior = prior.create_perspective_prior(self.perspective_hyps, self.lexicon_hyps, self.perspective_prior_type, self.learner_perspective, self.perspective_prior_strength)
-#             lexicon_prior = prior.create_lexicon_prior(self.lexicon_hyps, self.lexicon_prior_type, self.lexicon_prior_strength, self.error)
-#             composite_log_priors = prior.list_composite_log_priors_with_speaker_distinction(self.hypothesis_space, self.perspective_hyps, self.lexicon_hyps, perspective_prior, lexicon_prior, self.size)
-#             new_agent = DistinctionAgent(self.perspective_hyps, self.lexicon_hyps, composite_log_priors, composite_log_priors, new_agent_perspective[0], self.alpha, new_agent_lexicon, new_agent_learning_type[0], self.size)
-
-#             # 1.4) Then we get the new agent's parent data from the old population:
-#             agent_data = data_per_agent[i]
-
-#             # 1.5) We subsequently let the new agent learn from the annotated_pop_data of the population and update its lexicon accordingly:
-#             normalized_log_posteriors_per_data_point_per_agent_matrix[i] = new_agent.inference(self.n_contexts, self.n_utterances, old_pop_data, error)
-#             selected_hyp, selected_lex_hyp = new_agent.update_lexicon()
-#             selected_hyp_per_agent_matrix[i] = selected_hyp
-#             self.lex_indices_per_agent[i] = selected_lex_hyp
-
-#             # 1.6) Then we remove the oldest agent (c.e. agent with index 0) from the population, and append the new agent at the end:
-#             self.population = np.delete(self.population, 0)
-#             self.population = np.append(self.population, new_agent)  # Appends the new agent to the end of the population
-#             self.perspectives_per_agent = np.delete(self.perspectives_per_agent, 0)
-#             self.perspectives_per_agent = np.append(self.perspectives_per_agent, new_agent.perspective)
-#             self.lexicons_per_agent = np.delete(self.lexicons_per_agent, 0)
-#             self.lexicons_per_agent = np.append(self.population, new_agent.lexicon)
-#             self.learning_types_per_agent = np.delete(self.learning_types_per_agent, 0)
-#             self.learning_types_per_agent = np.append(self.population, new_agent.learning_type)
-
-#         # 1.7) Finally, the agent id numbers are updated:
-#         for i in range(self.size):
-#             agent = self.population[i]
-#             agent.id = i
-
-#         return selected_hyp_per_agent_matrix, avg_fitness, parent_probs, self.parent_index_per_learner, self.parent_lex_indices, normalized_log_posteriors_per_data_point_per_agent_matrix
-
 class BilingualPopulation(Population):
     def __init__(self, size, n_meanings, n_signals, hypothesis_space, perspective_hyps,
             lexicon_hyps, perspective_prior_type, perspective_prior_strength, lexicon_prior_type,
@@ -1996,6 +1404,12 @@ class BilingualPopulation(Population):
         self.communities = communities
         self.community_probs = community_probs
         self.interaction_matrix = interaction_matrix
+
+        if isinstance(lexicon_probs, dict):
+            self.approach = 'top-down'
+        else:
+            self.approach = 'bottom-up'
+
         super(BilingualPopulation, self).__init__(size, n_meanings, n_signals, hypothesis_space, perspective_hyps,
             lexicon_hyps, perspective_prior_type, perspective_prior_strength, lexicon_prior_type,
             lexicon_prior_strength, perspectives, sal_alpha, lexicon_probs, production_error,
@@ -2004,35 +1418,46 @@ class BilingualPopulation(Population):
 
         self.n_signals_total = self.n_signals * len(self.communities)
 
-    def assign_communities(self):
+
+    def assign_communities(self, communities=None, probs=None):
         '''
-        assigns communities to each agent. Called each time we create a new generation
+        assigns communities to each bilingualagent. Called each time we create a new generation
         '''
-        communities = []
-        for prob, comm in zip(self.community_probs, self.communities):
-            communities.extend([comm] * int(prob*self.size))
-        np.random.shuffle(communities)
-        return communities
+        communities = communities or self.communities
+        probs = probs or self.community_probs
+        communities_per_agent = []
+        for prob, comm in zip(probs, communities):
+            communities_per_agent.extend([comm] * int(prob*self.size))
+        communities_per_agent = np.array(communities_per_agent)
+        # we don't need to shuffle since agents don't care which ind the parents are at
+        # np.random.shuffle(communities_per_agent)
+        return communities_per_agent
 
     def create_pop(self):
         """
         Create the first generation.
-        :return: A list containing all the Agent objects in the population
+        :return: A list containing all the BilingualAgent objects in the population
         """
-        np.random.seed(0)
+        self.communities_per_agent = self.assign_communities()
+
         self.perspective = 0 # flips between generations
         population = []
         pop_perspectives = np.array([self.perspective] * self.size)
 
         self.perspectives_per_agent = pop_perspectives
-        pop_lex_indices = np.random.choice(np.arange(len(self.lexicon_hyps)), size=self.size, p=self.lexicon_probs)
+        if self.approach == 'bottom-up':
+            lexicon_probs = self.lexicon_probs
+            pop_lex_indices = np.random.choice(np.arange(len(self.lexicon_hyps)), size=self.size, p=lexicon_probs)
+        else:
+            pop_lex_indices = []
+            for comm_name in self.communities_per_agent:
+                lexicon_probs = self.lexicon_probs[comm_name]
+                pop_lex_indices.append(np.random.choice(np.arange(len(self.lexicon_hyps)), size=1, p=lexicon_probs)[0])
         self.lexicons_per_agent = np.array([self.lexicon_hyps[l] for l in pop_lex_indices])
         self.learning_types_per_agent = np.random.choice(self.learning_types, size=self.size, p=self.learning_type_probs)
         perspective_prior = prior.create_perspective_prior(self.perspective_hyps, self.lexicon_hyps, self.perspective_prior_type, self.perspective, self.perspective_prior_strength)
         lexicon_prior = prior.create_lexicon_prior(self.lexicon_hyps, self.lexicon_prior_type, self.lexicon_prior_strength, self.error)
         composite_log_priors_population = prior.list_composite_log_priors(self.agent_type, self.size, self.hypothesis_space, self.perspective_hyps, self.lexicon_hyps, perspective_prior, lexicon_prior) # The full set of composite priors on a LOG SCALE (1D numpy array)
-
-        self.communities_per_agent = self.assign_communities()
 
         for i, curr_comm in enumerate(self.communities_per_agent):
             perspective = pop_perspectives[i]
@@ -2049,9 +1474,7 @@ class BilingualPopulation(Population):
     def pop_update(self, context_generation, helpful_contexts, n_meanings, n_signals,
                    error, selection_type, selection_weighting, communication_type,
                    ca_measure_type, n_interactions, teacher_type, perspectives_per_agent=None,
-                   n_procs=1, seed=None):
-        if seed is not None:
-            np.random.seed(seed)
+                   n_procs=1):
         parent_fitness_array = self.calc_fitness(selection_type, selection_weighting, communication_type, ca_measure_type, n_interactions, self.parent_index_per_learner, self.parent_generation, self.parent_lex_indices)
         avg_fitness = np.mean(parent_fitness_array)
         if selection_weighting == 'none':
@@ -2079,8 +1502,9 @@ class BilingualPopulation(Population):
             elif self.context_generation == 'optimal':
                 context_matrix = gen_helpful_context_matrix_fixed_order(self.n_meanings, self.n_contexts, self.helpful_contexts)
 
+            # get parents (speaker) based on both parent_probs and community interaction matrix
             speaker_order = create_speaker_order_iteration_community(self, selection_type, parent_probs, teacher_type, self.n_contexts, learner_community)
-            self.parent_index_per_learner[i] = speaker_order[0].id
+            self.parent_index_per_learner[i] = np.random.choice(speaker_order, size=1)[0].id
 
             if context_generation == 'random':
                 old_pop_data = self.produce_pop_data(context_matrix, self.n_utterances, speaker_order)
@@ -2095,15 +1519,14 @@ class BilingualPopulation(Population):
 
         # now we work on the learner population
         self.perspective = 1 - self.perspective
-
+        selected_hyp_per_agent_matrix = np.zeros(n_agents_to_be_replaced).astype(int)
         normalized_log_posteriors_per_agent_matrix = np.zeros((n_agents_to_be_replaced, len(self.hypothesis_space)))
         if n_procs == 1:
             pool = None
             start = time.time()
-            for agent_idx in range(n_agents_to_be_replaced):
+            for agent_idx, learner_community in enumerate(learner_communities):
                 agent_data = data_per_agent[agent_idx]
-                import pdb; pdb.set_trace()
-                new_agent, log_posteriors, selected_hyp, lex_hyp = self.agent_update(agent_data, error)
+                new_agent, log_posteriors, selected_hyp, lex_hyp = self.agent_update(agent_data, error, learner_community)
                 #     print(self.parent_generation[0].perspective, new_agent.perspective)
                 normalized_log_posteriors_per_agent_matrix[agent_idx] = log_posteriors
                 selected_hyp_per_agent_matrix[agent_idx] = selected_hyp
@@ -2119,8 +1542,40 @@ class BilingualPopulation(Population):
                 self.lexicons_per_agent = np.vstack((self.lexicons_per_agent, [new_agent.lexicon.lexicon]))
                 self.learning_types_per_agent = np.delete(self.learning_types_per_agent, 0)
                 self.learning_types_per_agent = np.append(self.learning_types_per_agent, new_agent.learning_type)
+                self.communities_per_agent = np.delete(self.communities_per_agent, 0)
+                self.communities_per_agent = np.append(self.communities_per_agent, new_agent.community)
             print(' | took {:.2f}s'.format(time.time()-start)),
-        import pdb; pdb.set_trace()
+
+        else: # multiprocessing doesn't work with 'chain' condition!
+            start = time.time()
+            pool = ProcessPool(nodes=n_procs)
+            error_list = [error] * n_agents_to_be_replaced
+            results = pool.map(self.agent_update, data_per_agent, error_list, learner_communities)
+
+            for agent_idx in range(n_agents_to_be_replaced):
+                normalized_log_posteriors_per_agent_matrix[agent_idx] = results[agent_idx][1]
+                selected_hyp_per_agent_matrix[agent_idx] = results[agent_idx][2]
+                self.lex_indices_per_agent[agent_idx] = results[agent_idx][3]
+
+            self.population = [x[0] for x in results]
+            self.perspectives_per_agent = [x[0].perspective for x in results]
+            self.lexicons_per_agent = [x[0].lexicon.lexicon for x in results]
+            self.learning_types_per_agent = [x[0].learning_type for x in results]
+            self.communities_per_agent = np.array([x[0].community for x in results])
+            print('took {:.2f}s'.format(time.time()-start)),
+        assert np.array_equal(self.communities_per_agent, learner_communities)
+
+        for i in range(self.size):
+            agent = self.population[i]
+            agent.id = i
+
+        if pool is not None:
+            pool.close()
+            pool.join()
+            pool.clear()
+
+        return selected_hyp_per_agent_matrix, avg_fitness, parent_probs, self.parent_index_per_learner, self.parent_lex_indices, \
+               self.communities_per_agent
 
     def produce_pop_data_fixed_contexts(self, context_matrix, n_utterances, speaker_order, helpful_contexts):
         """
@@ -2135,12 +1590,69 @@ class BilingualPopulation(Population):
             context = context_matrix[c]
             speaker = speaker_order[c]
             speaker_data = speaker.produce_data(self.n_meanings, self.n_signals, np.array([context]), self.n_utterances, self.error, self.extra_error)
+
             speaker_topics = speaker_data.topics[0]
             speaker_utterances = speaker_data.utterances[0].astype(int)
             pop_topic_matrix[c] = speaker_topics
             signal_counts_per_context_matrix[context_index, speaker_utterances] += 1
         pop_data = FixedContextsData(context_matrix, pop_topic_matrix, signal_counts_per_context_matrix, helpful_contexts)
         return pop_data
+
+    def agent_update(self, agent_data, error, community):
+        # 1.2) We choose the new agent's perspective and learning_type with uniform probability from the attributes self.perspective_probs and self.learning_probs:
+        new_agent_perspective = self.perspective
+        new_agent_learning_type = np.random.choice(self.learning_types, size=1, p=self.learning_type_probs)
+        new_agent_lexicon = Lexicon('empty_lex', self.n_meanings, self.n_signals)
+
+        # 1.3) Then we initialize the new agent with that perspective and learning_type and with an empty lexicon
+        #FIXME: Again: the new agent is initialized with attributes that are globally defined in the params_and_run module ()
+
+        perspective_prior = prior.create_perspective_prior(self.perspective_hyps, self.lexicon_hyps, self.perspective_prior_type, self.perspective, self.perspective_prior_strength)
+        lexicon_prior = prior.create_lexicon_prior(self.lexicon_hyps, self.lexicon_prior_type, self.lexicon_prior_strength, self.error)
+        composite_log_priors = prior.list_composite_log_priors(self.agent_type, self.size, self.hypothesis_space, self.perspective_hyps, self.lexicon_hyps, perspective_prior, lexicon_prior)
+
+        new_agent = BilingualAgent(self.perspective_hyps, self.lexicon_hyps, composite_log_priors,
+                composite_log_priors, new_agent_perspective, self.sal_alpha, new_agent_lexicon,
+                new_agent_learning_type, community, self.communities)
+        # 1.5) We subsequently let the new agent learn from the annotated_pop_data of the population and update its lexicon accordingly:
+        log_posteriors = new_agent.inference_on_signal_counts_data(agent_data, error)
+
+        selected_hyp, selected_lex_hyp = new_agent.update_lexicon()
+        return new_agent, log_posteriors, selected_hyp, selected_lex_hyp
+
+
+    def calc_ca_lex_only(self, ca_measure_type, parent, learner):
+        # This method calculates communicative accuracy in both directions: How well the learner understands their cultural parent and also how well the learner can express meanings to their cultural parent. The method does NOT take perspective into account.
+        if learner.pragmatic_level != 'literal':
+            raise ValueError("lex_only method of CA calculation only works when pragmatic_level == 'literal'")
+        production_probs_parent = np.zeros((self.n_meanings, self.n_signals * len(self.communities)))
+        production_probs_learner = np.zeros((self.n_meanings, self.n_signals * len(self.communities)))
+        reception_probs_parent = np.zeros((self.n_signals * len(self.communities), self.n_meanings))
+        reception_probs_learner = np.zeros((self.n_signals * len(self.communities), self.n_meanings))
+        for m in range(self.n_meanings):
+            signal_probs_parent = learner.calc_signal_probs(parent.lexicon.lexicon, m, self.error)
+            production_probs_parent[m] = signal_probs_parent
+        for s in range(self.n_signals):
+            meaning_probs_learner = learner.calc_meaning_probs(learner.lexicon.lexicon, s, self.error)
+            reception_probs_learner[s] = meaning_probs_learner
+        reception_probs_learner = reception_probs_learner.T
+        learner_comprehension_success = np.multiply(production_probs_parent, reception_probs_learner)
+        success_per_meaning_comprehension = np.sum(learner_comprehension_success, axis=1)
+        ca_comprehension = np.mean(success_per_meaning_comprehension)
+        ca = ca_comprehension
+        if ca_measure_type == "comp_n_prod":
+            for m in range(self.n_meanings):
+                signal_probs_learner = learner.calc_signal_probs(learner.lexicon.lexicon, m, self.error)
+                production_probs_learner[m] = signal_probs_learner
+            for s in range(self.n_signals):
+                meaning_probs_parent = learner.calc_meaning_probs(parent.lexicon.lexicon, s, self.error)
+                reception_probs_parent[s] = meaning_probs_parent
+            reception_probs_parent = reception_probs_parent.T
+            learner_production_success = np.multiply(production_probs_learner, reception_probs_parent)
+            success_per_meaning_production = np.sum(learner_production_success, axis=1)
+            ca_production = np.mean(success_per_meaning_production)
+            ca = np.mean(np.array([ca_comprehension, ca_production]))
+        return ca
 
 class BilingualAgent(Agent):
     """

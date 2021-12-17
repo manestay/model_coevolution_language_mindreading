@@ -15,6 +15,7 @@ import lex
 import prior
 import pop
 import measur
+from lib import normalize
 
 logging.getLogger('matplotlib').setLevel(logging.WARNING)
 copy_specification = ''  # Can be set to e.g. '_c1' or simply to '' if there is only one copy
@@ -55,11 +56,18 @@ def calc_percentiles_fitness_over_gens(avg_fitness_matrix_all_runs):
     percentiles_fitness_over_gens = np.array([percentile_25_fitness_over_gens, median_fitness_over_gens, percentile_75_fitness_over_gens])
     return percentiles_fitness_over_gens
 
-def calc_lex_hyp_proportions(hyp_inds, min_info_indices, intermediate_info_indices, max_info_indices):
-    hist_values, _ = np.histogram(hyp_inds, bins=[0, min_info_indices[-1]+1, intermediate_info_indices[-1]+1, max_info_indices[-1]])
-    props = np.round(np.true_divide(hist_values,sum(hist_values)), 3)
-    props = np.flip(props)
-    return props
+def calc_lex_hyp_proportions(hyp_inds, info_dict, min_max_info):
+    min_info, max_info = min_max_info
+    props = [0] * 3
+    for hyp_ind in hyp_inds:
+        info = info_dict[hyp_ind]
+        if info == max_info:
+            props[0] += 1
+        elif info == min_info:
+            props[2] += 1
+        else:
+            props[1] += 1
+    return normalize(np.array(props))
 
 def plot_informativeness_over_gens(proportions, plot_file_path, plot_file_title):
     optimal = proportions[:, :, 0].mean(axis=0)
