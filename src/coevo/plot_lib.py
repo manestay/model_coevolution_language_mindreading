@@ -83,15 +83,48 @@ def plot_informativeness_over_gens(proportions, plot_file_path, plot_file_title)
     width = 0.25
     with sns.axes_style("whitegrid"):
         fig, ax = plt.subplots()
-        ax.plot(gens, optimal, 'b', label='optimal')
-        ax.plot(gens, partial, 'c', label='partial')
-        ax.plot(gens, uninform, 'g', label='uninformative')
+    ax.plot(gens, optimal, 'b', linewidth=3, label='optimal')
+    ax.plot(gens, partial, 'c', linewidth=3, label='partial')
+    ax.plot(gens, uninform, 'g', linewidth=3, label='uninformative')
 
     ax.set_ylim(0.0, 1.0)
     ax.set_xlabel('Generations')
     ax.set_ylabel('Mean Proportion')
     fname = os.path.join(plot_file_path, plot_file_title)
     plt.tight_layout()
+    plt.savefig(fname)
+    plt.show()
+
+
+def plot_informativeness_3(props_A, propsB, props_all, langs, plot_file_path, plot_file_title, plot_title=None):
+    with sns.axes_style("whitegrid"):
+        fig, axs = plt.subplots(3, figsize=(8,10))
+    if plot_title:
+        fig.suptitle(plot_title, fontsize=20)
+    # fig.subplots_adjust(top=2)
+    for i, (proportions, name) in enumerate(zip((props_A, propsB, props_all), langs)):
+        ax = axs[i]
+        optimal = proportions[:, :, 0].mean(axis=0)
+        partial = proportions[:, :, 1].mean(axis=0)
+        uninform = proportions[:, :, 2].mean(axis=0)
+        gens = np.arange(0, proportions.shape[1])
+
+        sns.set_style("whitegrid")
+        sns.set_palette("deep")
+        sns.set(font_scale=1.6)
+        lex_type_labels = ['Optimal', 'Partly informative', 'Uninformative']
+        ind = np.arange(len(lex_type_labels))
+        width = 0.25
+        ax.plot(gens, optimal, 'b', linewidth=2, label='optimal')
+        ax.plot(gens, partial, 'c', linewidth=2, label='partial')
+        ax.plot(gens, uninform, 'g', linewidth=2, label='uninformative')
+
+        ax.set_ylim(0.0, 1.0)
+        ax.set_xlabel('Generations')
+        ax.set_ylabel('Mean Proportion')
+        ax.set_title(name,fontsize=15)
+        fname = os.path.join(plot_file_path, plot_file_title)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.96])
     plt.savefig(fname)
     plt.show()
 
@@ -103,15 +136,6 @@ def calc_p_taking_success(selected_hyps_per_generation_matrix, selected_parent_i
             avg_success_per_generation[i] = 'NaN'
         else:
             selected_hyps_per_agent = selected_hyps_per_generation_matrix[i]
-            # success_per_agent = np.zeros(len(selected_hyps_per_agent))
-            # for a in range(len(selected_hyps_per_agent)):
-            #     selected_hyp_index_agent = selected_hyps_per_agent[a]
-            #     selected_hyp_agent = hypothesis_space[int(selected_hyp_index_agent)]
-            #     learner_p_hyp = perspective_hyps[selected_hyp_agent[0]]
-            #     if learner_p_hyp == parent_perspective:
-            #         success_per_agent[a] = 1.
-            #     else:
-            #         success_per_agent[a] = 0.
             success_per_agent = np.array([hypothesis_space[x][0] == parent_perspective for x in selected_hyps_per_agent])
             avg_success_per_generation[i] = np.mean(success_per_agent)
             parent_perspective = 1 - parent_perspective
@@ -119,10 +143,14 @@ def calc_p_taking_success(selected_hyps_per_generation_matrix, selected_parent_i
 
 
 def calc_communication_success(selected_hyps_per_generation_matrix, selected_parent_indices_matrix,
-        pragmatic_level_parent, pragmatic_level_learner, communication_type, ca_measure_type, n_interactions,
+        communication_type, ca_measure_type, n_interactions,
         hypothesis_space, perspective_hyps, lexicon_hyps, perspective_prior_type, perspective_prior_strength,
         lexicon_prior_type, lexicon_prior_constant, learner_perspective, learning_types, learning_type_probs,
-        sal_alpha, error, agent_type, pop_size, n_meanings, n_signals, n_utterances):
+        sal_alpha, error, agent_type, pop_size, n_meanings, n_signals, n_utterances, \
+        start_ind=None, end_ind=None,
+        communities=None, community_list=None, prestige=None):
+    if start_ind is None:
+        start_ind, end_ind = 0, selected_hyps_per_generation_matrix.shape[1]
     avg_success_per_generation = np.zeros(len(selected_parent_indices_matrix))
     parent_perspective = 1
     learning_type_index = learning_type_probs.index(1.0)
@@ -138,7 +166,8 @@ def calc_communication_success(selected_hyps_per_generation_matrix, selected_par
             selected_hyps_per_parent = selected_hyps_per_generation_matrix[i-1]
             selected_parent_indices_per_agent = selected_parent_indices_matrix[i]
             success_per_agent = np.zeros(len(selected_hyps_per_agent))
-            for a in range(len(selected_hyps_per_agent)):
+            for a in range(start_ind, end_ind):
+                community = community_list[a] if community_list is not None else None
                 parent_index = selected_parent_indices_per_agent[a]
                 selected_hyp_index_agent = selected_hyps_per_agent[a]
                 selected_hyp_agent = hypothesis_space[int(selected_hyp_index_agent)]
@@ -148,9 +177,12 @@ def calc_communication_success(selected_hyps_per_generation_matrix, selected_par
                 selected_hyp_parent = hypothesis_space[int(selected_hyp_index_parent)]
                 parent_lex_matrix = lexicon_hyps[selected_hyp_parent[1]]
                 parent_lexicon = lex.Lexicon('specified_lexicon', n_meanings, n_signals, ambiguous_lex=None, specified_lexicon=parent_lex_matrix)
-                if pragmatic_level_parent == 'literal' or pragmatic_level_parent == 'perspective-taking':
+
+                if community:
+                    parent = pop.BilingualAgent(perspective_hyps, lexicon_hyps, composite_log_prior, composite_log_prior, parent_perspective, sal_alpha, parent_lexicon, 'sample', community, communities, prestige)
+                    learner = pop.BilingualAgent(perspective_hyps, lexicon_hyps, composite_log_prior, composite_log_prior, learner_perspective, sal_alpha, learner_lexicon, 'sample', community, communities, prestige)
+                else:
                     parent = pop.Agent(perspective_hyps, lexicon_hyps, composite_log_prior, composite_log_prior, parent_perspective, sal_alpha, parent_lexicon, 'sample')
-                if pragmatic_level_learner == 'literal' or pragmatic_level_learner == 'perspective-taking':
                     learner = pop.Agent(perspective_hyps, lexicon_hyps, composite_log_prior, composite_log_prior, learner_perspective, sal_alpha, learner_lexicon, learning_type)
                 context_matrix = context.gen_context_matrix('continuous', n_meanings, n_meanings, n_interactions)
                 ca = measur.calc_comm_acc(context_matrix, communication_type, ca_measure_type, n_interactions, n_utterances, parent, learner, n_meanings, n_signals, sal_alpha, error, parent.pragmatic_level, s_p_hyp=parent.perspective, s_type_hyp=parent.pragmatic_level)

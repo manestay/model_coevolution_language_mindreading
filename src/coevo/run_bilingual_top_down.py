@@ -17,6 +17,7 @@ import json
 import sys
 
 import numpy as np
+from numpy.lib.function_base import _parse_input_dimensions
 
 from hypspace import list_hypothesis_space
 import lex
@@ -27,7 +28,7 @@ import prior
 from lib import get_helpful_contexts, get_lexicon_hyps, get_hypothesis_space, read_config, \
                 get_hyp_inds, get_lexicon_probs_ambig
 from plot_lib import calc_lex_hyp_proportions, calc_p_taking_success, calc_communication_success, \
-                     plot_informativeness_over_gens, plot_success_over_gens
+                     plot_informativeness_over_gens, plot_success_over_gens, plot_informativeness_3
 
 
 parser = argparse.ArgumentParser()
@@ -90,11 +91,9 @@ def run_iteration(n_meanings, n_signals, n_iterations, report_every_i, turnover_
         run_selected_parent_indices_matrix.append(selected_parent_indices)
         run_parent_lex_indices_matrix.append(parent_lex_indices)
         communities_per_agent_matrix.append(communities_per_agent)
-
         # community indices
         commA_inds = np.where(communities_per_agent == 'commA')
         commB_inds = np.where(communities_per_agent == 'commB')
-
 
         # calculate proportions per language
         hyp_space = population.hypothesis_space
@@ -114,7 +113,6 @@ def run_iteration(n_meanings, n_signals, n_iterations, report_every_i, turnover_
                 lex_props = calc_lex_hyp_proportions(hyp_inds, info_dict, min_max_info)
                 print(' | lex: {}'.format(lex_props))
                 fst.append(lex_props[0])
-        # import pdb; pdb.set_trace()
 
     return run_selected_hyps_per_generation_matrix, run_avg_fitness_matrix, run_parent_probs_matrix, \
         run_selected_parent_indices_matrix, run_parent_lex_indices_matrix, communities_per_agent_matrix
@@ -270,7 +268,10 @@ if __name__ == "__main__":
                 print('overwriting existing run...')
         else:
             os.makedirs(out_dirname)
+
+        if not os.path.exists(out_dir_pickle):
             os.makedirs(out_dir_pickle)
+        if not os.path.exists(out_dir_plots):
             os.makedirs(out_dir_plots)
         with open(os.path.join(out_dirname, 'params.json'), 'w') as f:
             json.dump(config_d, f, indent=2)
@@ -299,6 +300,7 @@ if __name__ == "__main__":
         ('langA', informativity_dictA, min_max_infoA),
         ('langB', informativity_dictB, min_max_infoB),
         ('all', informativity_dict_all, min_max_info_all),)
+    langs = [x[0] for x in lang_tups]
 
     pickle_file_title_all_results = os.path.join(out_dir_pickle, 'results.p')
 
@@ -383,53 +385,69 @@ if __name__ == "__main__":
 
 
 
-    # dict for each community (A, B, all) to matrix of dimension (run_idx x iteration x agent)
-    selected_hyps_new_lex_order_all_runs = {'commA': {}, 'commB': {}, 'all': {}}
-    proportions = {'commA': {}, 'commB': {}, 'all': {}}
-    for run, run_comms in zip(selected_hyps_per_generation_matrix, communities_per_agent_matrix):
-        # selected_hyps_new_lex_order_all_runs.append([])
-        # proportions.append([])
+    # the lowest level arrays are of dimension (n_runs * n_iterations * 3)
+    proportions = {'commA': {x: [] for x in langs}, 'commB': {x: [] for x in langs}}
 
-        for row, comms_per_agent in zip(run, run_comms):
-            commA_inds = np.where(comms_per_agent == 'A')[0]
-            commB_inds = np.where(comms_per_agent == 'B')[0]
+    selected_hyps_commA = selected_hyps_per_generation_matrix[:,:, :pop_size/2]
+    selected_hyps_commB = selected_hyps_per_generation_matrix[:,:, pop_size/2:]
+    comm_tups = (('commA', selected_hyps_commA), ('commB', selected_hyps_commB))
 
-            for comm_name, comm_inds in (('commA', commA_inds), ('commB', commB_inds),
-                                         ('all', np.arange(len(comms_per_agent))) ):
-                hyps_d = selected_hyps_new_lex_order_all_runs[comm_name]
-                props_d = proportions[comm_name]
-                for lang_name, sorted_info, min_inds, inter_inds, max_inds in lang_tups:
-                    hyp_inds = get_hyp_inds(row, hypothesis_space, sorted_info)
-                    selected_hyps_new_lex_order_all_runs[-1].append(hyp_inds)
-                    props = calc_lex_hyp_proportions(hyp_inds, min_inds, inter_inds, max_inds)
-                    proportions[-1].append(props)
-        selected_hyps_new_lex_order_all_runs = np.array(selected_hyps_new_lex_order_all_runs)
-        proportions = np.array(proportions)
+    for comm_name, selected_hyps_comm in comm_tups:
+        props_comm = proportions[comm_name]
 
-        out_name = 'lex_dist_over_gens_{}.png'.format(lang_name)
+        for run in selected_hyps_comm:
+            [x.append([]) for x in props_comm.values()]
+            for row in run:
+                for lang_name, info_dict, min_max_info in lang_tups:
+                    hyp_inds = get_hyp_inds(row, hypothesis_space)
+                    props_row = calc_lex_hyp_proportions(hyp_inds, info_dict, min_max_info)
+                    if lang_name not in props_comm:
+                        props_comm[lang_name] = []
+                    props_comm[lang_name][-1].append(props_row)
+
+        for lang_name in langs:
+            props_comm[lang_name] = np.array(props_comm[lang_name])
+
+        out_name = 'lex_dist_over_gens_{}.png'.format(comm_name)
         print('plotting to {}'.format(os.path.join(out_dir_plots, out_name)))
-        plot_informativeness_over_gens(proportions, out_dir_plots, out_name)
-
-    avg_pt_success_per_gen = np.zeros(n_iterations)
-    avg_ca_success_per_gen = np.zeros(n_iterations)
+        plot_informativeness_3(props_comm['langA'], props_comm['langB'], props_comm['all'], \
+                langs, out_dir_plots, out_name, comm_name)
 
     np.random.seed(0)
-    for selected_hyps_per_generation, selected_parent_indices in \
-            zip(selected_hyps_per_generation_matrix, selected_parent_indices_matrix):
-        pt_success = calc_p_taking_success(selected_hyps_per_generation, selected_parent_indices, hypothesis_space, perspective_hyps)
-        avg_pt_success_per_gen += pt_success
 
-        comm_success = calc_communication_success(selected_hyps_per_generation, selected_parent_indices,
-                pragmatic_level, pragmatic_level, communication_type, ca_measure_type, n_interactions,
-                hypothesis_space, perspective_hyps, lexicon_hyps, perspective_prior_type,
-                perspective_prior_strength, lexicon_prior_type, lexicon_prior_constant,
-                learning_types, learning_type_probs, sal_alpha, error, agent_type,
-                pop_size, n_meanings, n_signals, n_utterances)
-        avg_ca_success_per_gen += comm_success
-    # print('perspective-inference performance over generations:')
-    avg_pt_success_per_gen /= n_runs
-    # print('communication performance over generations:')
-    avg_ca_success_per_gen /= n_runs
+    learner_perspective = 0
 
-    print('plotting to {}'.format(os.path.join(out_dir_plots, 'success_over_gens.png')))
-    plot_success_over_gens(avg_pt_success_per_gen, avg_ca_success_per_gen, out_dir_plots,  'success_over_gens.png')
+    comm_inds = [('commA', 0, 5), ('commB', 5, 10)]
+
+    community_list = communities_per_agent_matrix[0][0]
+
+    for comm_name, start_ind, end_ind in comm_inds:
+        avg_pt_success_per_gen = np.zeros(n_iterations)
+        avg_ca_success_per_gen = np.zeros(n_iterations)
+        i=0
+        for selected_hyps_per_generation, selected_parent_indices in \
+                zip(selected_hyps_per_generation_matrix, selected_parent_indices_matrix):
+
+            pt_success = calc_p_taking_success(selected_hyps_per_generation[:, start_ind:end_ind], selected_parent_indices, hypothesis_space, perspective_hyps)
+            avg_pt_success_per_gen += pt_success
+
+            comm_success = calc_communication_success(selected_hyps_per_generation, selected_parent_indices,
+                    communication_type, ca_measure_type, n_interactions,
+                    hypothesis_space, perspective_hyps, lexicon_hyps_all, perspective_prior_type,
+                    perspective_prior_strength, lexicon_prior_type, lexicon_prior_constant,
+                    learner_perspective, learning_types, learning_type_probs, sal_alpha, error,
+                    agent_type, pop_size, n_meanings, n_signals, n_utterances, start_ind, end_ind,
+                    communities, community_list, prestige)
+            avg_ca_success_per_gen += comm_success
+
+            learner_perspective = 1 - learner_perspective
+            i +=1
+
+        # print('perspective-inference performance over generations:')
+        avg_pt_success_per_gen /= n_runs
+        # print('communication performance over generations:')
+        avg_ca_success_per_gen /= n_runs
+
+        out_name = 'success_over_gens_{}.png'.format(comm_name)
+        print('plotting to {}'.format(os.path.join(out_dir_plots, out_name)))
+        plot_success_over_gens(avg_pt_success_per_gen, avg_ca_success_per_gen, out_dir_plots,  out_name)

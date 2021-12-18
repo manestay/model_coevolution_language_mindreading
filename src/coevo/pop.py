@@ -1575,8 +1575,8 @@ class BilingualPopulation(Population):
             pool.join()
             pool.clear()
 
-        return selected_hyp_per_agent_matrix, avg_fitness, parent_probs, self.parent_index_per_learner, self.parent_lex_indices, \
-               self.communities_per_agent
+        return selected_hyp_per_agent_matrix, avg_fitness, parent_probs, self.parent_index_per_learner.copy(), self.parent_lex_indices.copy(), \
+               self.communities_per_agent.copy()
 
     def produce_pop_data_fixed_contexts(self, context_matrix, n_utterances, speaker_order, helpful_contexts):
         """
