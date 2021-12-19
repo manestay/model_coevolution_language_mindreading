@@ -11,7 +11,7 @@ from hypspace import *
 from data import Data, FixedContextsData, SpeakerAnnotatedData, convert_dataset_to_signal_counts_per_context
 from lex import Lexicon
 from context import *
-from lib import normalize
+from lib import normalize, find_best_language
 
 np.seterr(divide = 'ignore')
 
@@ -966,7 +966,7 @@ class Population(object):
             if self.pragmatic_level == 'literal' or self.pragmatic_level == 'perspective-taking':
                 agent = Agent(self.perspective_hyps, self.lexicon_hyps, composite_log_priors_population, composite_log_priors_population, perspective, self.sal_alpha, lexicon, learning_type)
             elif self.pragmatic_level == 'prag':
-                agent = BilingualAgent(self.perspective_hyps, self.lexicon_hyps, composite_log_priors_population, composite_log_priors_population, perspective, self.sal_alpha, lexicon, learning_type, self.pragmatic_level, self.pragmatic_level, self.optimality_alpha, self.extra_error)
+                agent = PragmaticAgent(self.perspective_hyps, self.lexicon_hyps, composite_log_priors_population, composite_log_priors_population, perspective, self.sal_alpha, lexicon, learning_type, self.pragmatic_level, self.pragmatic_level, self.optimality_alpha, self.extra_error)
 
             agent.id = int(i)
             population.append(agent)
@@ -1411,6 +1411,8 @@ class BilingualPopulation(Population):
         else:
             self.approach = 'bottom-up'
 
+        self.comms_lang = {x: None for x in self.communities}
+
         super(BilingualPopulation, self).__init__(size, n_meanings, n_signals, hypothesis_space, perspective_hyps,
             lexicon_hyps, perspective_prior_type, perspective_prior_strength, lexicon_prior_type,
             lexicon_prior_strength, perspectives, sal_alpha, lexicon_probs, production_error,
@@ -1467,7 +1469,7 @@ class BilingualPopulation(Population):
 
             agent = BilingualAgent(self.perspective_hyps, self.lexicon_hyps, composite_log_priors_population,
                     composite_log_priors_population, perspective, self.sal_alpha, lexicon, learning_type,
-                    curr_comm, self.communities, self.prestige)
+                    curr_comm, self.communities, self.approach, self.prestige, self.comms_lang[curr_comm])
             agent.id = int(i)
             population.append(agent)
         return population
@@ -1575,6 +1577,12 @@ class BilingualPopulation(Population):
             pool.join()
             pool.clear()
 
+        if self.approach == 'bottom-up':
+            commA_inds = np.where(self.communities_per_agent == 'commA')
+            self.comms_lang['commA'] = find_best_language(self.lexicon_hyps, self.lex_indices_per_agent[commA_inds])
+            commB_inds = np.where(self.communities_per_agent == 'commB')
+            self.comms_lang['commB'] = find_best_language(self.lexicon_hyps, self.lex_indices_per_agent[commB_inds])
+
         return selected_hyp_per_agent_matrix, avg_fitness, parent_probs, self.parent_index_per_learner.copy(), self.parent_lex_indices.copy(), \
                self.communities_per_agent.copy()
 
@@ -1614,7 +1622,7 @@ class BilingualPopulation(Population):
 
         new_agent = BilingualAgent(self.perspective_hyps, self.lexicon_hyps, composite_log_priors,
                 composite_log_priors, new_agent_perspective, self.sal_alpha, new_agent_lexicon,
-                new_agent_learning_type, community, self.communities, self.prestige)
+                new_agent_learning_type, community, self.communities, self.approach, self.prestige, self.comms_lang[community])
         # 1.5) We subsequently let the new agent learn from the annotated_pop_data of the population and update its lexicon accordingly:
         log_posteriors = new_agent.inference_on_signal_counts_data(agent_data, error)
 
@@ -1661,7 +1669,7 @@ class BilingualAgent(Agent):
     """
 
     def __init__(self, perspective_hyps, lexicon_hyps, log_priors, log_posteriors, perspective,
-            alpha, lexicon, learning_type, community, communities, prestige=None):
+            alpha, lexicon, learning_type, community, communities, approach='top-down', prestige=None, lang_inds=None):
         """
         This initializes the same as for the Agent superclass, with the only difference that an
         extra attribute self.community is added
@@ -1682,7 +1690,7 @@ class BilingualAgent(Agent):
         self.prestige = prestige
         self.n_communities = len(communities)
 
-        if self.prestige:
+        if self.prestige and approach == 'top-down':
             other_prestige = 1 - self.prestige
             prestige_probs = np.zeros(self.lexicon_hyps.shape[2])
             if self.communities.index(self.community) == 0:
@@ -1692,6 +1700,14 @@ class BilingualAgent(Agent):
                 prestige_probs[2:4] = prestige
                 prestige_probs[0:2] = other_prestige
             self.prestige_probs = normalize(prestige_probs)
+        elif self.prestige and lang_inds:
+            other_prestige = 1 - self.prestige
+            prestige_probs = np.zeros(self.lexicon_hyps.shape[2])
+            prestige_probs.fill(other_prestige)
+            prestige_probs[list(lang_inds)] = prestige
+            self.prestige_probs = normalize(prestige_probs)
+        else:
+            self.prestige_probs = None
 
     def produce_signal(self, n_signals, topic, error):
         """
@@ -1700,7 +1716,7 @@ class BilingualAgent(Agent):
         :return: A signal for topic meaning, chosen probabilistically based on self.lexicon
         """
         signal_probs = self.calc_signal_probs(self.lexicon.lexicon, topic, error)
-        if self.prestige:
+        if self.prestige_probs is not None:
             signal_probs = normalize(signal_probs * self.prestige_probs)
         signal = np.random.choice(np.arange(n_signals * self.n_communities), 1, p=signal_probs)
         return signal

@@ -157,3 +157,93 @@ def get_lexicon_probs_ambig(lexicon_hyps_all, ind_l, ind_r, sum_val):
     lexicon_probs_commA[ambig_commA] = 1
     lexicon_probs_commA = normalize(lexicon_probs_commA)
     return lexicon_probs_commA
+
+
+def calc_lex_hyp_proportions(hyp_inds, info_dict, null_min_max_info):
+    null_info, min_info, max_info = null_min_max_info
+    props = [0] * 4
+    for hyp_ind in hyp_inds:
+        info = info_dict[hyp_ind]
+        if info == max_info:
+            props[0] += 1
+        elif info > min_info:
+            props[1] += 1
+        elif info == min_info:
+            props[2] += 1
+        elif null_info <= info < min_info:
+            props[3] += 1
+        else:
+            import pdb; pdb.set_trace()
+    return normalize(np.array(props))
+
+def find_best_language(lexicon_hyps, hyp_inds):
+    # TODO: might want to think harder and refactor this to have less branches
+    def get_all_meanings(meaning1_signals, meaning2_signals):
+        return set(np.hstack((meaning1_signals, meaning2_signals)))
+    # currently only supports 2 meaning case!
+    selected_hyps = lexicon_hyps[hyp_inds]
+    selected_hyps_sum = selected_hyps.sum(axis=0)
+    max_meaning1, max_meaning2 = selected_hyps.sum(axis=0).max(axis=1)
+    meaning1_signals = np.where(selected_hyps_sum[0] == max_meaning1)[0]
+    meaning2_signals = np.where(selected_hyps_sum[1] == max_meaning2)[0]
+
+    arr_eq = np.array_equal(meaning1_signals, meaning2_signals)
+    if meaning1_signals.shape[0] == 2 and arr_eq:
+        return set(meaning1_signals)
+
+    if arr_eq:
+        second_highest1 = np.unique(selected_hyps_sum[0])[-2]
+        second_highest2 = np.unique(selected_hyps_sum[1])[-2]
+        if second_highest1 >= second_highest2:
+            meaning1_signals = np.where(selected_hyps_sum[0] == second_highest1)[0]
+        else:
+            meaning2_signals = np.where(selected_hyps_sum[1] == second_highest2)[0]
+
+    all_meanings = get_all_meanings(meaning1_signals, meaning2_signals)
+
+    while len(all_meanings) != 2:
+        # languages can only be (n x n), so disambiguate
+        # first try set diff
+        signals1 = np.setdiff1d(meaning1_signals, meaning2_signals)
+        signals2 = np.setdiff1d(meaning2_signals, meaning1_signals)
+        if signals1.shape[0] and signals2.shape[0] and len(get_all_meanings(signals1, signals2)) >= 2:
+            meaning1_signals = np.random.choice(signals1)
+            meaning2_signals = np.random.choice(signals2)
+            all_meanings = get_all_meanings(meaning1_signals, meaning2_signals)
+            break
+
+        # next try deleting lower prob indices
+        if np.shape(meaning1_signals) and np.shape(meaning1_signals) > 1:
+            min_ind = selected_hyps_sum[1][meaning1_signals].argmin()
+            max_ind = selected_hyps_sum[1][meaning1_signals].argmax()
+            if min_ind != max_ind:
+                meaning1_signals = np.delete(meaning1_signals, max_ind)
+        all_meanings = get_all_meanings(meaning1_signals, meaning2_signals)
+        if len(all_meanings) == 2: break
+
+        if np.shape(meaning2_signals) and np.shape(meaning2_signals) > 1:
+            min_ind = selected_hyps_sum[0][meaning2_signals].argmin()
+            max_ind = selected_hyps_sum[0][meaning2_signals].argmax()
+            if min_ind != max_ind:
+                meaning2_signals = np.delete(meaning2_signals, max_ind)
+        all_meanings = get_all_meanings(meaning1_signals, meaning2_signals)
+        if len(all_meanings) == 2: break
+
+        if len(all_meanings) != 2:
+            # randomly select one of two, to avoid infinite loop!
+            if np.shape(meaning1_signals):
+                meaning1_signals = np.random.choice(meaning1_signals)
+            elif meaning1_signals in meaning2_signals:
+                return meaning2_signals
+            if np.shape(meaning2_signals):
+                meaning2_signals = np.random.choice(meaning2_signals)
+        all_meanings = get_all_meanings(meaning1_signals, meaning2_signals)
+
+        if len(all_meanings) < 2:
+            # last resort
+            all_meanings = np.where(selected_hyps_sum == selected_hyps_sum.max())[1]
+            if all_meanings.shape > 2:
+                all_meanings = np.random.choice(all_meanings, size=2,replace=False)
+            # import pdb; pdb.set_trace()
+            all_meanings = set(all_meanings)
+    return tuple(all_meanings)

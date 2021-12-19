@@ -56,19 +56,6 @@ def calc_percentiles_fitness_over_gens(avg_fitness_matrix_all_runs):
     percentiles_fitness_over_gens = np.array([percentile_25_fitness_over_gens, median_fitness_over_gens, percentile_75_fitness_over_gens])
     return percentiles_fitness_over_gens
 
-def calc_lex_hyp_proportions(hyp_inds, info_dict, min_max_info):
-    min_info, max_info = min_max_info
-    props = [0] * 3
-    for hyp_ind in hyp_inds:
-        info = info_dict[hyp_ind]
-        if info == max_info:
-            props[0] += 1
-        elif info == min_info:
-            props[2] += 1
-        else:
-            props[1] += 1
-    return normalize(np.array(props))
-
 def plot_informativeness_over_gens(proportions, plot_file_path, plot_file_title):
     optimal = proportions[:, :, 0].mean(axis=0)
     partial = proportions[:, :, 1].mean(axis=0)
@@ -104,9 +91,11 @@ def plot_informativeness_3(props_A, propsB, props_all, langs, plot_file_path, pl
     # fig.subplots_adjust(top=2)
     for i, (proportions, name) in enumerate(zip((props_A, propsB, props_all), langs)):
         ax = axs[i]
-        optimal = proportions[:, :, 0].mean(axis=0)
-        partial = proportions[:, :, 1].mean(axis=0)
-        uninform = proportions[:, :, 2].mean(axis=0)
+
+        optimal = np.nanmean(proportions[:, :, 0], axis=0)
+        partial = np.nanmean(proportions[:, :, 1], axis=0)
+        uninform = np.nanmean(proportions[:, :, 2], axis=0)
+        null = np.nanmean(proportions[:, :, 3], axis=0)
         gens = np.arange(0, proportions.shape[1])
 
         sns.set_style("whitegrid")
@@ -118,8 +107,9 @@ def plot_informativeness_3(props_A, propsB, props_all, langs, plot_file_path, pl
         ax.plot(gens, optimal, 'b', linewidth=2, label='optimal')
         ax.plot(gens, partial, 'c', linewidth=2, label='partial')
         ax.plot(gens, uninform, 'g', linewidth=2, label='uninformative')
+        ax.plot(gens, null, 'm', linewidth=2, label='null')
 
-        ax.set_ylim(0.0, 1.0)
+        # ax.set_ylim(0.0, 1.0)
         ax.set_xlabel('Generations')
         ax.set_ylabel('Mean Proportion')
         ax.set_title(name,fontsize=15)
@@ -205,7 +195,7 @@ def plot_success_over_gens(avg_pt_success_per_gen, avg_ca_success_per_gen, plot_
         ax.plot(gens, avg_pt_success_per_gen, 'r', label='p-inference')
         ax.plot(gens, avg_ca_success_per_gen, 'y', label='comm_acc')
 
-    ax.set_ylim(0.0, 1.0)
+    # ax.set_ylim(0.0, 1.0)
     ax.set_xlabel('Generations')
     ax.set_ylabel('Mean success')
     fname = os.path.join(plot_file_path, plot_file_title)
