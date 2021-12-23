@@ -448,14 +448,14 @@ if __name__ == "__main__":
             pt_success = calc_p_taking_success(selected_hyps_per_generation[:, start_ind:end_ind], selected_parent_indices, hypothesis_space, perspective_hyps)
             avg_pt_success_per_gen += pt_success
 
-            comm_success = calc_communication_success(selected_hyps_per_generation, selected_parent_indices,
-                    communication_type, ca_measure_type, n_interactions,
-                    hypothesis_space, perspective_hyps, lexicon_hyps_all, perspective_prior_type,
-                    perspective_prior_strength, lexicon_prior_type, lexicon_prior_constant,
-                    learner_perspective, learning_types, learning_type_probs, sal_alpha, error,
-                    agent_type, pop_size, n_meanings, n_signals, n_utterances, start_ind, end_ind,
-                    communities, community_list, prestige)
-            avg_ca_success_per_gen += comm_success
+            # comm_success = calc_communication_success(selected_hyps_per_generation, selected_parent_indices,
+            #         communication_type, ca_measure_type, n_interactions,
+            #         hypothesis_space, perspective_hyps, lexicon_hyps_all, perspective_prior_type,
+            #         perspective_prior_strength, lexicon_prior_type, lexicon_prior_constant,
+            #         learner_perspective, learning_types, learning_type_probs, sal_alpha, error,
+            #         agent_type, pop_size, n_meanings, n_signals, n_utterances, start_ind, end_ind,
+            #         communities, community_list, prestige)
+            # avg_ca_success_per_gen += comm_success
 
             learner_perspective = 1 - learner_perspective
             i +=1
@@ -463,7 +463,7 @@ if __name__ == "__main__":
         # print('perspective-inference performance over generations:')
         avg_pt_success_per_gen /= n_runs
         # print('communication performance over generations:')
-        avg_ca_success_per_gen /= n_runs
+        # avg_ca_success_per_gen /= n_runs
 
         out_name = 'success_over_gens_{}.png'.format(comm_name)
         print('plotting to {}'.format(os.path.join(out_dir_plots, out_name)))
