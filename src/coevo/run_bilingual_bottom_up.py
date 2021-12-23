@@ -4,7 +4,7 @@ space. Languages are then defined as the two meanings most closely associated wi
 """
 
 import argparse
-from collections import OrderedDict
+from collections import OrderedDict, Counter
 import ConfigParser
 import itertools
 import logging
@@ -137,6 +137,7 @@ if __name__ == "__main__":
     print('loading config file...')
     config.read(args.config)
     config_d = OrderedDict()
+    print(args.run_name)
     if args.verbose:
         logging.debug('config parameters:')
         for section in config.sections():
@@ -278,7 +279,7 @@ if __name__ == "__main__":
     num_signals_total = lexicon_hyps.shape[2]
     informativity_d = {}
     for tup in itertools.combinations(range(num_signals_total), 2):
-        info_per_lex = lex.calc_ca_all_lexicons(lexicon_hyps[:, :, tup], error, lex_measure)
+        info_per_lex = np.round(lex.calc_ca_all_lexicons(lexicon_hyps[:, :, tup], error, lex_measure), 3)
         null_info = info_per_lex.min()
         min_info = 1. / n_meanings
         max_info = info_per_lex.max()
@@ -366,6 +367,22 @@ if __name__ == "__main__":
 
         pickle.dump(proportion_max_offspring_single_parent_matrix, open(pickle_file_title_max_offspring_single_parent, 'wb'))
 
+    # calculate stability of languages
+    num_swapsA, num_swapsB = [], []
+    for run_comms in communities_langs_matrix:
+        prevA, prevB = None, None
+        swapsA, swapsB = [], []
+        for i, comm_tup in enumerate(run_comms):
+            currA = comm_tup['commA']
+            currB = comm_tup['commB']
+            if currA != prevA:
+                swapsA.append(i)
+            if currB != prevB:
+                swapsB.append(i)
+            prevA, prevB = currA, currB
+        num_swapsA.append(len(swapsA))
+        num_swapsB.append(len(swapsB))
+    print('avg num swaps: A={}, B={}'.format(np.mean(num_swapsA), np.mean(num_swapsB)))
 
     ######
     # plotting
@@ -395,6 +412,12 @@ if __name__ == "__main__":
                     # create lang_tups for this row
                     info_d_lang, null_min_max_info = informativity_d[tuple(lang_inds_)]
                     lang_tups.append(('{}_lang'.format(comm_name_), lang_inds_, info_d_lang, null_min_max_info, langs_same))
+                # add lang_tups for all langs
+                info_d_all = Counter(lang_tups[0][2]) + Counter(lang_tups[1][2])
+                lang_tups.append(('all', None,
+                    info_d_all,
+                    (np.amin(info_d_all.values()), 2 / n_meanings, np.amax(info_d_all.values())),
+                    False))
 
                 for lang_name, lang_inds, info_dict, min_max_info, langs_same in lang_tups:
                     hyp_inds = get_hyp_inds(row, hypothesis_space)
@@ -412,15 +435,11 @@ if __name__ == "__main__":
         for lang_name in props_comm:
             props_comm[lang_name] = np.array(props_comm[lang_name])
             props_comm_distinct[lang_name] = np.array(props_comm_distinct[lang_name])
-
-        props_comm['all'] = (props_comm['commA_lang'] + props_comm['commB_lang']) /2
-
         print(comm_name)
         if comm_name == 'commA':
             props_comm['commB_lang'] = props_comm_distinct['commB_lang']
         elif comm_name == 'commB':
             props_comm['commA_lang'] = props_comm_distinct['commA_lang']
-
 
         out_name = 'lex_dist_over_gens_{}.png'.format(comm_name)
         print('plotting to {}'.format(os.path.join(out_dir_plots, out_name)))
